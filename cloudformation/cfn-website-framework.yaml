@@ -1,0 +1,444 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Deploy a NIST 80-53 compliant website framework using S3, CloudFront, and Route 53
+############################################################################################################
+# Since the S3 Buckets in this template are used for access logging, there are a few controls they cannot comply with.
+# SecurityHub S3.7
+# SecurityHub S3.9: S3 bucket server access logging should be enabled - This could result in circular logging.
+# SecurityHub S3.17: S3 buckets should be encrypted at rest with AWS KMS keys - S3 Access Logging cannot leverage KMS, so SSE-S3 is used.
+# SecurityHub S3.20:
+# The resulting assets will require exception documentation.
+############################################################################################################
+
+Parameters:
+  ProjectPrefix:
+    Type: String
+    Description: Prefix for project assets
+    Default: "cc-website-framework"
+    AllowedPattern: "[a-z0-9-]+"
+    ConstraintDescription: "Only alphanumeric characters and hyphens are allowed."
+
+  DomainName:
+    Type: String
+    Description: The domain name for the CloudFront distribution.
+
+  ACMCertificateArn:
+    Type: String
+    Description: The ARN of the ACM certificate to use for the CloudFront distribution.
+
+  HostedZoneId:
+    Type: String
+    Description: The ID of the Route 53 hosted zone for the domain
+
+  BucketLogsLifeCycle:
+    Type: String
+    Description: Number of days to keep the logs
+    Default: "365"
+    AllowedPattern: "[0-9]+"
+    ConstraintDescription: "Only numeric characters are allowed."
+
+  BucketTransitionLifeCycle:
+    Type: String
+    Description: Number of days to keep the logs
+    Default: "30"
+    AllowedPattern: "[0-9]+"
+    ConstraintDescription: "Only numeric characters are allowed."
+
+Resources:
+
+  OpsDeadLetterQueue:
+    Type: 'AWS::SQS::Queue'
+    Properties:
+      QueueName: !Sub '${ProjectPrefix}-${AWS::AccountId}-${AWS::Region}-dead-letter'
+      KmsMasterKeyId: 'alias/aws/sqs'
+      MessageRetentionPeriod: 345600
+      ReceiveMessageWaitTimeSeconds: 20
+
+  OpsQueue:
+    Type: 'AWS::SQS::Queue'
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W48
+            reason: "Ignoring KMS key, uses SSE-SQS"
+    Properties:
+      QueueName: !Sub '${ProjectPrefix}-${AWS::AccountId}-${AWS::Region}'
+      MessageRetentionPeriod: 345600
+      ReceiveMessageWaitTimeSeconds: 20
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt OpsDeadLetterQueue.Arn
+        maxReceiveCount: 5
+      VisibilityTimeout: 30
+
+  OpsQueuePolicy:
+    Type: 'AWS::SQS::QueuePolicy'
+    Properties:
+      Queues:
+        - !Ref 'OpsQueue'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: 'Allow S3 delivery of Notifications'
+            Effect: 'Allow'
+            Principal:
+              Service: 's3.amazonaws.com'
+            Action: 
+              - SQS:SendMessage
+            Resource: !GetAtt 'OpsQueue.Arn'
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+          - Sid: 'Allow SQS Notifications'
+            Effect: 'Allow'
+            Principal:
+              Service: 'sqs.amazonaws.com'  
+            Action:
+              - sqs:SendMessage
+            Resource: !GetAtt 'OpsQueue.Arn'
+
+  S3AccessLoggingBucket:
+    Type: AWS::S3::Bucket
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W35
+            reason: "Ignoring Access Logging as this is an Access Logging bucket."
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - BucketKeyEnabled: TRUE
+            ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      BucketName: !Sub '${ProjectPrefix}-s3accesslogs-${AWS::AccountId}-${AWS::Region}'
+      LifecycleConfiguration:
+        Rules:
+          - Id: DegradeOldLogs
+            Status: Enabled
+            ExpirationInDays: !Ref BucketLogsLifeCycle
+            NoncurrentVersionExpirationInDays: !Ref BucketLogsLifeCycle
+            Transitions:
+              - StorageClass: STANDARD_IA
+                TransitionInDays: !Ref BucketTransitionLifeCycle
+      NotificationConfiguration:
+        QueueConfigurations:
+          - Event: s3:ReducedRedundancyLostObject
+            Queue: !GetAtt OpsQueue.Arn
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      Tags:
+        - Key: 'SecurityHub_S3.7'
+          Value: 'Server Access Log Collection Point'
+        - Key: 'SecurityHub_S3.9'
+          Value: 'Server Access Log Collection Point'
+        - Key: 'SecurityHub_S3.17'
+          Value: 'Server Access Log Collection Point'
+        - Key: 'SecurityHub_S3.20'
+          Value: 'Server Access Log Collection Point'
+
+  S3AccessLoggingBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref S3AccessLoggingBucket
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Sid: S3ServerAccessLogs
+            Effect: Allow
+            Principal: 
+              Service:
+                - logging.s3.amazonaws.com
+            Action: s3:PutObject
+            Resource: !Sub "arn:${AWS::Partition}:s3:::${S3AccessLoggingBucket}/*"
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+          - Sid: AllowSSLRequestsOnly
+            Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource:
+              - !Sub "arn:${AWS::Partition}:s3:::${S3AccessLoggingBucket}"
+              - !Sub "arn:${AWS::Partition}:s3:::${S3AccessLoggingBucket}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: false
+          - Sid: Troubleshooting
+            Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
+            Action: 
+              - s3:GetBucketPolicy
+              - s3:PutBucketPolicy
+            Resource: !Sub "arn:${AWS::Partition}:s3:::${S3AccessLoggingBucket}"
+
+  CloudFrontLoggingBucket:
+    Type: AWS::S3::Bucket
+    Metadata:
+      cfn-lint:
+        config:
+          ignore_checks:
+            - W3045
+      cfn_nag:
+        rules_to_suppress:
+          - id: W35
+            reason: "Access logging destination buckets should not have access logging enabled."
+    Properties:
+      BucketName: !Sub '${ProjectPrefix}-cfaccesslogs-${AWS::AccountId}-${AWS::Region}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - BucketKeyEnabled: TRUE
+            ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: DegradeOldLogs
+            Status: Enabled
+            ExpirationInDays: !Ref BucketLogsLifeCycle
+            NoncurrentVersionExpirationInDays: !Ref BucketLogsLifeCycle
+            Transitions:
+              - StorageClass: STANDARD_IA
+                TransitionInDays: !Ref BucketTransitionLifeCycle
+      NotificationConfiguration:
+        QueueConfigurations:
+          - Event: s3:ReducedRedundancyLostObject
+            Queue: !GetAtt OpsQueue.Arn
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerPreferred
+      AccessControl: LogDeliveryWrite
+      Tags:
+        - Key: 'SecurityHub_S3.7'
+          Value: 'Server Access Log Collection Point'
+        - Key: 'SecurityHub_S3.9'
+          Value: 'Server Access Log Collection Point'
+        - Key: 'SecurityHub_S3.17'
+          Value: 'Server Access Log Collection Point'
+        - Key: 'SecurityHub_S3.20'
+          Value: 'Server Access Log Collection Point'
+
+  CloudFrontLoggingBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref CloudFrontLoggingBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowCloudFrontLogging
+            Effect: Allow
+            Principal:
+              Service: 'cloudfront.amazonaws.com'
+            Action: 's3:PutObject'
+            Resource: !Sub 'arn:aws:s3:::${ProjectPrefix}-cfaccesslogs-${AWS::AccountId}-${AWS::Region}/*'
+            Condition:
+              StringEquals:
+                s3:x-amz-acl: 'bucket-owner-full-control'
+          - Sid: RequireSSLRequestsOnly
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource: !Sub 'arn:aws:s3:::${ProjectPrefix}-cfaccesslogs-${AWS::AccountId}-${AWS::Region}/*'
+            Condition:
+              Bool:
+                'aws:SecureTransport': false
+
+  S3KMSKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: KMS Key for S3 bucket encryption.
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: EnableIAMUserPermissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
+            Action: "kms:*"
+            Resource: "*"
+          - Sid: AllowS3BucketAccess
+            Effect: Allow
+            Principal:
+              Service: "s3.amazonaws.com"
+            Action:
+              - "kms:Encrypt"
+              - "kms:Decrypt"
+              - "kms:ReEncrypt*"
+              - "kms:GenerateDataKey*"
+              - "kms:DescribeKey"
+            Resource: "*"
+          - Sid: AllowCloudFrontAccess
+            Effect: Allow
+            Principal:
+              Service: "cloudfront.amazonaws.com"
+            Action:
+              - "kms:Decrypt"
+            Resource: "*"
+            # Condition:
+            #   StringEquals:
+            #     kms:ViaService: !Sub "cloudfront.${AWS::Region}.amazonaws.com"
+            #     kms:CallerAccount: !Ref "AWS::AccountId"
+
+  S3KMSAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub 'alias/${ProjectPrefix}-s3'
+      TargetKeyId: !Ref S3KMSKey
+
+  S3HostingBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref DomainName
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - BucketKeyEnabled: TRUE
+            ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !Ref S3KMSKey
+      NotificationConfiguration:
+        QueueConfigurations:
+          - Event: s3:ReducedRedundancyLostObject
+            Queue: !GetAtt OpsQueue.Arn
+      LifecycleConfiguration:
+        Rules:
+          - Id: TransitionToIA
+            Status: Enabled
+            Transitions:
+              - StorageClass: STANDARD_IA
+                TransitionInDays: !Ref BucketTransitionLifeCycle
+      LoggingConfiguration:
+        DestinationBucketName: !Ref S3AccessLoggingBucket
+        LogFilePrefix: access-logs/
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerPreferred
+
+  S3HostingBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref S3HostingBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: EnforceSSL
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !Sub "arn:aws:s3:::${DomainName}"
+              - !Sub "arn:aws:s3:::${DomainName}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: false
+          - Sid: AllowCloudFrontAccess
+            Effect: Allow
+            Principal:
+              Service: "cloudfront.amazonaws.com"
+            Action: "s3:GetObject"
+            Resource: !Sub "arn:aws:s3:::${DomainName}/*"
+
+  CloudFrontOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub "${ProjectPrefix}-OriginAccessControl"
+        Description: Access control for S3 bucket
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    DependsOn: 
+      - CloudFrontLoggingBucketPolicy
+      - S3HostingBucketPolicy
+      - S3KMSAlias
+    Properties:
+      DistributionConfig:
+        Aliases:
+          - !Ref DomainName
+          - !Sub "www.${DomainName}"
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods:
+            - GET
+            - HEAD
+          CachedMethods:
+            - GET
+            - HEAD
+          ForwardedValues:
+            QueryString: false
+            Cookies:
+              Forward: none
+        DefaultRootObject: index.html
+        Enabled: true
+        Origins:
+          - Id: S3Origin
+            DomainName: !GetAtt S3HostingBucket.DomainName
+            S3OriginConfig:
+              OriginAccessIdentity: ""
+            OriginAccessControlId: !Ref CloudFrontOriginAccessControl
+        PriceClass: PriceClass_100
+        Restrictions:
+          GeoRestriction:
+            RestrictionType: whitelist
+            Locations:
+              - US
+              - CA
+        ViewerCertificate:
+          AcmCertificateArn: !Ref ACMCertificateArn
+          MinimumProtocolVersion: TLSv1.2_2019
+          SslSupportMethod: sni-only
+        Logging:
+          Bucket: !GetAtt CloudFrontLoggingBucket.DomainName
+          IncludeCookies: false
+          Prefix: cloudfront-logs/
+
+  Route53Record:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref DomainName
+      Type: A
+      AliasTarget:
+        HostedZoneId: Z2FDTNDATAQYW2 # This is the fixed CloudFront Hosted Zone ID
+        DNSName: !GetAtt CloudFrontDistribution.DomainName
+        EvaluateTargetHealth: false
+
+Outputs:
+  WebsiteURL:
+    Description: The URL for the website
+    Value: !GetAtt CloudFrontDistribution.DomainName
+  S3BucketName:
+    Description: "The name of the S3 Bucket"
+    Value: !Ref S3AccessLoggingBucket
+  S3BucketArn:
+    Description: "The ARN of the S3 Bucket"
+    Value: !GetAtt S3AccessLoggingBucket.Arn
+  SQSQueueName:
+    Description: "The name of the SQS Queue"
+    Value: !Ref OpsQueue
+  SQSQueueArn:
+    Description: "The ARN of the SQS Queue"
+    Value: !GetAtt OpsQueue.Arn
