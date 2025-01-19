@@ -12,7 +12,12 @@ Example:
 """
 import time
 import argparse
+import logging
 import boto3
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 def validate_template(client, template_body):
     """
@@ -25,9 +30,9 @@ def validate_template(client, template_body):
     Returns:
         dict: Validation response from CloudFormation.
     """
-    print("Validating template...")
+    logger.info("Validating template... %s", template_body)
     response = client.validate_template(TemplateBody=template_body)
-    print("Template validation response:", response)
+    logger.info("Template validation response: %s", response)
     return response
 
 def deploy_stack(client, stack_name, template_body, parameters):
@@ -41,9 +46,9 @@ def deploy_stack(client, stack_name, template_body, parameters):
         parameters: List of parameters to pass to the stack.
     """
     try:
-        print(f"Checking if stack {stack_name} exists...")
+        logger.info("Checking if stack %s exists...", stack_name)
         client.describe_stacks(StackName=stack_name)
-        print(f"Stack {stack_name} exists. Updating...")
+        logger.info("Stack %s exists. Updating...", stack_name)
         try:
             client.update_stack(
                 StackName=stack_name,
@@ -53,15 +58,15 @@ def deploy_stack(client, stack_name, template_body, parameters):
             )
             waiter = client.get_waiter('stack_update_complete')
             waiter.wait(StackName=stack_name)
-            print(f"Stack {stack_name} updated successfully.")
+            logger.info("Stack %s updated successfully.", stack_name)
         except client.exceptions.ClientError as e:
             if "No updates are to be performed" in str(e):
-                print(f"No updates detected for stack {stack_name}.")
+                logger.info("No updates detected for stack %s.", stack_name)
             else:
                 raise
     except client.exceptions.ClientError as e:
         if "does not exist" in str(e):
-            print(f"Stack {stack_name} does not exist. Creating...")
+            logger.info("Stack %s does not exist. Creating...", stack_name)
             client.create_stack(
                 StackName=stack_name,
                 TemplateBody=template_body,
@@ -70,7 +75,7 @@ def deploy_stack(client, stack_name, template_body, parameters):
             )
             waiter = client.get_waiter('stack_create_complete')
             waiter.wait(StackName=stack_name)
-            print(f"Stack {stack_name} created successfully.")
+            logger.info("Stack %s created successfully.", stack_name)
         else:
             raise
 
@@ -93,7 +98,7 @@ def request_acm_certificate(domain, zone_id, acm_client, route53_client):
         ValidationMethod="DNS",
     )
     cert_arn = response["CertificateArn"]
-    print(f"Certificate requested with ARN: {cert_arn}")
+    logger.info("Certificate requested with ARN: %s", cert_arn)
 
     # Retrieve validation options
     while True:
@@ -101,7 +106,7 @@ def request_acm_certificate(domain, zone_id, acm_client, route53_client):
         options = cert_details["Certificate"]["DomainValidationOptions"]
         if options and "ResourceRecord" in options[0]:
             break
-        print("Waiting for validation options to become available...")
+        logger.info("Waiting for validation options to become available...")
         time.sleep(5)
 
     # Create DNS validation records for all domains
@@ -125,16 +130,16 @@ def request_acm_certificate(domain, zone_id, acm_client, route53_client):
                 ]
             },
         )
-        print(f"Validation record created for {validation_record['Name']} in Route 53.")
+        logger.info("Validation record created for %s in Route 53.", validation_record['Name'])
 
     # Wait for certificate validation
     while True:
         cert_details = acm_client.describe_certificate(CertificateArn=cert_arn)
         status = cert_details["Certificate"]["Status"]
         if status == "ISSUED":
-            print("Certificate issued successfully.")
+            logger.info("Certificate issued successfully.")
             break
-        print(f"Waiting for certificate validation (status: {status})...")
+        logger.info("Waiting for certificate validation (status: %s)...", status)
         time.sleep(15)
 
     return cert_arn
@@ -153,7 +158,7 @@ def get_kms_key(client, alias_name):
     response = client.list_aliases()
     for alias in response["Aliases"]:
         if alias["AliasName"] == alias_name:
-            print(f"KMS alias {alias_name} already exists. Using existing key.")
+            logger.info("KMS alias %s already exists. Using existing key.", alias_name)
             return alias["TargetKeyId"]
     return None
 
@@ -166,28 +171,14 @@ def upload_index_html(s3_client, bucket_name, file_path):
         bucket_name: The S3 bucket name.
         file_path: Path to the index.html file.
     """
-    print(f"Uploading {file_path} to bucket {bucket_name}...")
-    s3_client.upload_file(file_path, bucket_name, "index.html", ExtraArgs={"ContentType": "text/html"})
-    print(f"Uploaded {file_path} to bucket {bucket_name} as index.html")
-
-# def get_hosted_zone_id(client, domain):
-#     """
-#     Retrieve the hosted zone ID for a domain.
-
-#     Args:
-#         client: Boto3 Route 53 client.
-#         domain: The domain name to search for.
-
-#     Returns:
-#         str: The hosted zone ID for the domain.
-#     """
-#     response = client.list_hosted_zones_by_name(DNSName=domain, MaxItems="1")
-#     hosted_zones = response.get("HostedZones", [])
-#     if not hosted_zones or not domain in hosted_zones[0]["Name"]:
-#         raise ValueError(f"No hosted zone found for domain {domain}")
-#     return hosted_zones[0]["Id"].split("/")[-1]
+    logger.info("Uploading %s to bucket %s as %s...", file_path, bucket_name, file_path)
+    s3_client.upload_file(file_path, bucket_name, file_path, ExtraArgs={"ContentType": "text/html"})
+    logger.info("Uploaded %s to bucket %s as %s.", file_path, bucket_name, file_path)
 
 def main():
+    '''
+    Main function to deploy the CloudFormation stack for the website framework.
+    '''
     parser = argparse.ArgumentParser(description="Deploy CloudFormation stack for website framework.")
     parser.add_argument("--account", required=True, help="AWS named profile to use.")
     parser.add_argument("--region", default="us-east-1", help="AWS region to deploy to. Default is us-east-1.")
@@ -196,7 +187,6 @@ def main():
     parser.add_argument("--bucketlogslifecycle", default="365", help="Number of days to retain bucket logs. Default is 365.")
     parser.add_argument("--buckettransitionlifecycle", default="30", help="Number of days to transition logs. Default is 30.")
     parser.add_argument("--validate", action="store_true", help="Validate the CloudFormation template instead of deploying.")
-    parser.add_argument("--index-file", default="./index.html", help="Path to the index.html file to upload.")
 
     args = parser.parse_args()
 
@@ -244,8 +234,9 @@ def main():
         ],
     )
 
-    # Upload index.html to S3
-    upload_index_html(s3_client, args.domain, args.index_file)
+    # Upload html to S3
+    upload_index_html(s3_client, args.domain, "index.html")
+    upload_index_html(s3_client, args.domain, "resume.html")
 
 if __name__ == "__main__":
     main()
