@@ -188,6 +188,9 @@ def upload_index_html(s3_client, bucket_name, file_path):
 #     return hosted_zones[0]["Id"].split("/")[-1]
 
 def main():
+    '''
+    Main function to deploy the CloudFormation stack for the website framework.
+    '''
     parser = argparse.ArgumentParser(description="Deploy CloudFormation stack for website framework.")
     parser.add_argument("--account", required=True, help="AWS named profile to use.")
     parser.add_argument("--region", default="us-east-1", help="AWS region to deploy to. Default is us-east-1.")
@@ -196,7 +199,6 @@ def main():
     parser.add_argument("--bucketlogslifecycle", default="365", help="Number of days to retain bucket logs. Default is 365.")
     parser.add_argument("--buckettransitionlifecycle", default="30", help="Number of days to transition logs. Default is 30.")
     parser.add_argument("--validate", action="store_true", help="Validate the CloudFormation template instead of deploying.")
-    parser.add_argument("--index-file", default="./index.html", help="Path to the index.html file to upload.")
 
     args = parser.parse_args()
 
@@ -244,8 +246,9 @@ def main():
         ],
     )
 
-    # Upload index.html to S3
-    upload_index_html(s3_client, args.domain, args.index_file)
+    # Upload html to S3
+    upload_index_html(s3_client, args.domain, "index.html")
+    upload_index_html(s3_client, args.domain, "resume.html")
 
 if __name__ == "__main__":
     main()

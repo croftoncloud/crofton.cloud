@@ -9,7 +9,7 @@ Initial examples to include:
 - DNS Review including SPK/DKIM/MX
 - Documentation Samples
 
-## Assets
+## Created Assets
 
 *cfn-website-framework.yaml*
 
@@ -32,7 +32,7 @@ Resources:
 
 *deploy.py*
 
-Usage: `usage: deploy.py [-h] --account ACCOUNT [--region REGION] --domain DOMAIN --prefix PREFIX [--bucketlogslifecycle BUCKETLOGSLIFECYCLE] [--buckettransitionlifecycle BUCKETTRANSITIONLIFECYCLE] [--validate] [--index-file INDEX_FILE]`
+Usage: `usage: deploy.py [-h] --account ACCOUNT [--region REGION] --domain DOMAIN --prefix PREFIX [--bucketlogslifecycle BUCKETLOGSLIFECYCLE] [--buckettransitionlifecycle BUCKETTRANSITIONLIFECYCLE] [--validate]`
 
 Example usage:
 
@@ -54,3 +54,20 @@ This script collects information from the AWS tenant to provide input for CloudF
 *index.html*
 
 This is a basic HTML page used to validate successful deployment of all components. This page can be updated to have the actual site content.
+
+## Repository Assets
+
+```
+.
+├── cloudformation
+│   ├── cfn-website-framework.yaml
+│   ├── deploy.py
+│   ├── index.html
+│   └── resume.html
+├── .github
+│   └── workflows
+│       ├── lint_on_pull_request.yaml
+│       └── lint_on_push.yaml
+├── .gitignore
+└── README.md
+```
