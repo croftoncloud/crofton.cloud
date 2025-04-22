@@ -1,3 +1,14 @@
+# Dependency directory
+node_modules/
+
+# Static build output
+.next/
+out/
+
+# Optional system files
+.DS_Store
+.env.local
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

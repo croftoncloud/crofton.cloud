@@ -30,6 +30,10 @@ Resources:
     - CloudFront Distribution to serve content
     - Route 53 Records to map domain to CloudFront Distribution
 
+### How the website works
+
+The website is a React project. As content is changed, `npm run build` is executed from the `website/` directory to generate a new local copy of the website in the `website/out` directory. Once the content is satisfactory, deploy the content to the website via `python3 ./deploy.py --account portfolio --region us-east-1 --domain crofton.cloud --prefix cc --site-path website/out`
+
 *deploy.py*
 
 Usage: `usage: deploy.py [-h] --account ACCOUNT [--region REGION] --domain DOMAIN --prefix PREFIX [--bucketlogslifecycle BUCKETLOGSLIFECYCLE] [--buckettransitionlifecycle BUCKETTRANSITIONLIFECYCLE] [--validate]`
