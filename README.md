@@ -58,7 +58,11 @@ python3 generate.py --output-dir ../dist
 
 ```bash
 cd cloudformation
+# Local deployment with AWS profile
 python3 deploy.py --account <AWS_PROFILE> --domain <DOMAIN> --prefix <PREFIX>
+
+# CI/CD deployment (uses OIDC credentials from environment)
+python3 deploy.py --domain <DOMAIN> --prefix <PREFIX>
 ```
 
 ## Repository Structure
@@ -127,4 +131,4 @@ python3 deploy.py --account <AWS_PROFILE> --domain <DOMAIN> --prefix <PREFIX>
 
 ## License
 
-MIT
+[PolyForm Noncommercial 1.0.0](LICENSE) - Free for non-commercial use.

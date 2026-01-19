@@ -62,9 +62,14 @@ python3 generate.py --output-dir ../dist --api-endpoint <API_ENDPOINT>
 Run from the `cloudformation/` directory:
 
 ```bash
+# Local deployment with AWS profile
 python3 ./deploy.py --account <AWS_PROFILE> --region us-east-1 --domain <DOMAIN> --prefix <PREFIX>
 
+# CI/CD deployment (uses OIDC credentials from environment)
+python3 ./deploy.py --region us-east-1 --domain <DOMAIN> --prefix <PREFIX>
+
 # Optional parameters:
+#   --account <AWS_PROFILE>            AWS named profile (optional in CI)
 #   --bucketlogslifecycle <days>       Log retention (default: 365)
 #   --buckettransitionlifecycle <days> Storage transition (default: 30)
 #   --validate                         Validate template only
