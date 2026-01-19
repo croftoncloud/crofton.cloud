@@ -1,0 +1,67 @@
+repos:
+  # Standard pre-commit hooks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+        name: Trim Trailing Whitespace
+      - id: end-of-file-fixer
+        name: Fix End of Files
+      - id: check-yaml
+        name: Check YAML
+        args: ['--unsafe']  # Allow custom tags in CloudFormation
+      - id: check-added-large-files
+        name: Check for Large Files
+        args: ['--maxkb=500']
+      - id: check-merge-conflict
+        name: Check for Merge Conflicts
+      - id: detect-private-key
+        name: Detect Private Keys
+
+  # CloudFormation linting
+  - repo: local
+    hooks:
+      - id: cfn-lint
+        name: CloudFormation Lint
+        entry: cfn-lint
+        language: system
+        files: 'cloudformation/.*\.ya?ml$'
+        types: [yaml]
+        description: Validate CloudFormation templates with cfn-lint
+
+      - id: cfn-nag
+        name: CloudFormation Security Scan
+        entry: cfn_nag_scan --input-path
+        language: system
+        files: 'cloudformation/.*\.ya?ml$'
+        types: [yaml]
+        pass_filenames: false
+        args: ['cloudformation/']
+        description: Security scan CloudFormation templates with cfn-nag
+        stages: [pre-push]  # Only run on push (slower)
+
+  # Python linting
+  - repo: https://github.com/psf/black
+    rev: 24.3.0
+    hooks:
+      - id: black
+        name: Black Formatter
+        files: '\.py$'
+
+  - repo: https://github.com/pycqa/flake8
+    rev: 7.0.0
+    hooks:
+      - id: flake8
+        name: Flake8 Linter
+        files: '\.py$'
+        args: ['--max-line-length=120', '--ignore=E501,W503']
+
+  - repo: local
+    hooks:
+      - id: pylint
+        name: Pylint
+        entry: pylint
+        language: system
+        files: '\.py$'
+        args: ['--disable=C0301']  # Disable line-too-long
+        description: Run pylint on Python files
