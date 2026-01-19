@@ -37,6 +37,9 @@ env:
   PROJECT_PREFIX: cc
   DOMAIN_NAME: crofton.cloud
   STACK_NAME: cc-website-framework
+  CONTACT_FORM_STACK_NAME: cc-contact-form
+  RECIPIENT_EMAIL: contact@crofton.cloud
+  SENDER_EMAIL: noreply@crofton.cloud
 
 jobs:
   lint:
@@ -252,7 +255,7 @@ jobs:
   deploy-content:
     name: Deploy Content
     runs-on: ubuntu-latest
-    needs: deploy-infrastructure
+    needs: [deploy-infrastructure, deploy-contact-form]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
 
     steps:
@@ -265,12 +268,20 @@ jobs:
           role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-crofton.cloud
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Prepare contact page with API endpoint
+        run: |
+          API_ENDPOINT="${{ needs.deploy-contact-form.outputs.api_endpoint }}"
+          sed -i "s|{{API_ENDPOINT}}|${API_ENDPOINT}|g" cloudformation/contact.html
+          echo "Configured contact form with API: $API_ENDPOINT"
+
       - name: Sync content to S3
         run: |
           # Upload HTML files
           aws s3 cp cloudformation/index.html s3://${{ env.DOMAIN_NAME }}/index.html \
             --content-type "text/html"
           aws s3 cp cloudformation/resume.html s3://${{ env.DOMAIN_NAME }}/resume.html \
+            --content-type "text/html"
+          aws s3 cp cloudformation/contact.html s3://${{ env.DOMAIN_NAME }}/contact.html \
             --content-type "text/html"
 
           # Upload CSS if exists
@@ -316,10 +327,91 @@ jobs:
             echo "No CloudFront distribution ID found, skipping invalidation"
           fi
 
+  deploy-contact-form:
+    name: Deploy Contact Form
+    runs-on: ubuntu-latest
+    needs: deploy-infrastructure
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-crofton.cloud
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deploy Contact Form Stack
+        run: |
+          # Check if stack exists
+          if aws cloudformation describe-stacks --stack-name ${{ env.CONTACT_FORM_STACK_NAME }} 2>/dev/null; then
+            echo "Updating contact form stack..."
+            aws cloudformation update-stack \
+              --stack-name ${{ env.CONTACT_FORM_STACK_NAME }} \
+              --template-body file://cloudformation/cfn-contact-form.yaml \
+              --parameters \
+                ParameterKey=ProjectPrefix,ParameterValue=${{ env.PROJECT_PREFIX }} \
+                ParameterKey=DomainName,ParameterValue=${{ env.DOMAIN_NAME }} \
+                ParameterKey=RecipientEmail,ParameterValue=${{ env.RECIPIENT_EMAIL }} \
+                ParameterKey=SenderEmail,ParameterValue=${{ env.SENDER_EMAIL }} \
+              --capabilities CAPABILITY_NAMED_IAM \
+              2>&1 || echo "No updates to perform"
+
+            aws cloudformation wait stack-update-complete \
+              --stack-name ${{ env.CONTACT_FORM_STACK_NAME }} 2>/dev/null || true
+          else
+            echo "Creating contact form stack..."
+            aws cloudformation create-stack \
+              --stack-name ${{ env.CONTACT_FORM_STACK_NAME }} \
+              --template-body file://cloudformation/cfn-contact-form.yaml \
+              --parameters \
+                ParameterKey=ProjectPrefix,ParameterValue=${{ env.PROJECT_PREFIX }} \
+                ParameterKey=DomainName,ParameterValue=${{ env.DOMAIN_NAME }} \
+                ParameterKey=RecipientEmail,ParameterValue=${{ env.RECIPIENT_EMAIL }} \
+                ParameterKey=SenderEmail,ParameterValue=${{ env.SENDER_EMAIL }} \
+              --capabilities CAPABILITY_NAMED_IAM
+
+            aws cloudformation wait stack-create-complete \
+              --stack-name ${{ env.CONTACT_FORM_STACK_NAME }}
+          fi
+
+      - name: Package Lambda Code
+        run: |
+          cd lambda
+          zip -r contact_form.zip contact_form.py
+          ls -la contact_form.zip
+
+      - name: Update Lambda Function Code
+        run: |
+          FUNCTION_NAME=$(aws cloudformation describe-stacks \
+            --stack-name ${{ env.CONTACT_FORM_STACK_NAME }} \
+            --query "Stacks[0].Outputs[?OutputKey=='LambdaFunctionName'].OutputValue" \
+            --output text)
+
+          echo "Updating Lambda function: $FUNCTION_NAME"
+          aws lambda update-function-code \
+            --function-name $FUNCTION_NAME \
+            --zip-file fileb://lambda/contact_form.zip
+
+      - name: Get API Endpoint
+        id: api-endpoint
+        run: |
+          API_ENDPOINT=$(aws cloudformation describe-stacks \
+            --stack-name ${{ env.CONTACT_FORM_STACK_NAME }} \
+            --query "Stacks[0].Outputs[?OutputKey=='ApiEndpoint'].OutputValue" \
+            --output text)
+          echo "api_endpoint=$API_ENDPOINT" >> $GITHUB_OUTPUT
+          echo "Contact Form API: $API_ENDPOINT"
+
+    outputs:
+      api_endpoint: ${{ steps.api-endpoint.outputs.api_endpoint }}
+
   deployment-summary:
     name: Deployment Summary
     runs-on: ubuntu-latest
-    needs: [deploy-infrastructure, deploy-content, invalidate-cache]
+    needs: [deploy-infrastructure, deploy-content, invalidate-cache, deploy-contact-form]
     if: always() && github.ref == 'refs/heads/main' && github.event_name == 'push'
 
     steps:
@@ -332,5 +424,7 @@ jobs:
           echo "| Infrastructure | ${{ needs.deploy-infrastructure.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Content | ${{ needs.deploy-content.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Cache Invalidation | ${{ needs.invalidate-cache.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Contact Form | ${{ needs.deploy-contact-form.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Website URL:** https://${{ env.DOMAIN_NAME }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Contact API:** ${{ needs.deploy-contact-form.outputs.api_endpoint }}" >> $GITHUB_STEP_SUMMARY

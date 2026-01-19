@@ -371,7 +371,11 @@ Resources:
       cfn_nag:
         rules_to_suppress:
           - id: W12
-            reason: API Gateway management requires broad permissions for REST API operations
+            reason: API Gateway management requires broad permissions for REST API and HTTP API operations
+      checkov:
+        skip:
+          - id: CKV_AWS_111
+            comment: API Gateway ARNs are dynamic. OIDC trust restricts to this repository only.
     Properties:
       PolicyName: APIGatewayManagement
       Roles:
@@ -379,7 +383,7 @@ Resources:
       PolicyDocument:
         Version: '2012-10-17'
         Statement:
-          - Sid: APIGatewayAccess
+          - Sid: APIGatewayRESTAccess
             Effect: Allow
             Action:
               - apigateway:POST
@@ -390,6 +394,42 @@ Resources:
             Resource:
               - !Sub 'arn:aws:apigateway:${AWS::Region}::/restapis'
               - !Sub 'arn:aws:apigateway:${AWS::Region}::/restapis/*'
+          - Sid: APIGatewayHTTPAccess
+            Effect: Allow
+            Action:
+              - apigateway:POST
+              - apigateway:GET
+              - apigateway:PUT
+              - apigateway:DELETE
+              - apigateway:PATCH
+            Resource:
+              - !Sub 'arn:aws:apigateway:${AWS::Region}::/apis'
+              - !Sub 'arn:aws:apigateway:${AWS::Region}::/apis/*'
+
+  # Policy for CloudWatch Logs (Lambda and API Gateway logging)
+  CloudWatchLogsPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: CloudWatchLogsManagement
+      Roles:
+        - !Ref GitHubActionsDeployRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: CloudWatchLogsAccess
+            Effect: Allow
+            Action:
+              - logs:CreateLogGroup
+              - logs:DeleteLogGroup
+              - logs:PutRetentionPolicy
+              - logs:DeleteRetentionPolicy
+              - logs:TagLogGroup
+              - logs:UntagLogGroup
+              - logs:DescribeLogGroups
+              - logs:ListTagsLogGroup
+            Resource:
+              - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ProjectPrefix}-*'
+              - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/apigateway/${ProjectPrefix}-*'
 
   # Policy for SQS (event notifications)
   SQSPolicy:
