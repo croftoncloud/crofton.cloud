@@ -1,0 +1,17 @@
+# CODEOWNERS - Define code ownership for pull request reviews
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default owners for everything in the repo
+* @williambrady
+
+# Infrastructure code
+/cloudformation/ @williambrady
+
+# CI/CD workflows
+/.github/ @williambrady
+
+# Data and content
+/data/ @williambrady
+
+# Documentation
+*.md @williambrady

@@ -1,0 +1,251 @@
+# Structured Resume Data for crofton.cloud
+# This file is consumed by the site generator to populate services, experience, and skills sections
+
+profile:
+  name: William Brady
+  title: Principal Cloud Security Architect
+  location: Hanover, MD 21076
+  email: will@crofton.cloud
+  phone: 443.454.2892
+  linkedin: https://www.linkedin.com/in/wbrady/
+  github: https://github.com/williambrady/
+
+summary: |
+  I'm a technologist who enjoys understanding every project or environment from concept through design,
+  integration, and deployment. I am compelled to understand how everything works, which allows me to build
+  creative new solutions and improvements. I've been active in the cyber security industry since dial-up
+  and have also deployed and managed global enterprise environments and multi-cloud solutions.
+
+certifications:
+  aws:
+    - Security Specialty
+    - Database Specialty
+    - Solutions Architect
+    - DevOps Engineer
+    - SysOps Administrator
+    - Developer
+    - Cloud Practitioner
+  microsoft:
+    - Azure Fundamentals
+
+experience:
+  - company: InterVision Systems, LLC
+    title: Principal Cloud Security Architect
+    period: November 2023 – Present
+    highlights:
+      - Built the Professional Services Cloud Security Program Charter and supporting policies
+      - Conduct client-facing Cloud Security Assessments using Observe, Plan, Report methodology
+      - Built reconnaissance automation to bootstrap Cloud Assessments for AWS
+      - Designed Continuous Monitoring (ConMon) for AWS Environments methodology
+      - Authored security finding triage framework integrating Python, AWS EventBridge/Lambda/Security Hub/Chatbot, Jira, and Slack
+      - Developed structured DevSecOps practices including LINTing and code scans with Snyk, Veracode, Checkov, and PrismaCloud
+      - Primary escalation for AWS Professional Services engineers and clients
+      - Authored IaC framework for environment hand-off including event pipelines, alarms, and dashboards
+
+  - company: Tanium, Inc
+    title: Sr. Cloud Security Engineer
+    period: February 2022 - September 2023
+    highlights:
+      - Supported multi-tenant SaaS environments in commercial and Highly Regulated Environments (HRE)
+      - Developed and maintained Terraform, Terragrunt, Python, PowerShell, and Bash scripts for secure IaC deployment
+      - Orchestrated CI/CD modernization, migrating Jenkins to GitHub Actions with automated security validation
+      - Enhanced Continuous Monitoring via custom automation leveraging Tanium for compliance enforcement
+
+  - company: Kion (formerly cloudtamer.io)
+    title: Sr. Cloud Security Architect
+    period: June 2020 – February 2022
+    highlights:
+      - Client-facing escalation for secure multi-cloud adoption and architecture
+      - Managed 650+ cloud accounts with automated provisioning, access controls, and security guardrails
+      - Developed reusable reference architectures for standardized, scalable security patterns
+      - Served on the Product Strategy Council, influencing platform security enhancements
+      - Automated CI/CD security integrations using Jenkins, Python, APIs, and Webhooks
+
+  - company: Dragos, Inc
+    title: Principal Security Engineer, Director of IT and Security
+    period: June 2018 – June 2020
+    highlights:
+      - Authored IT Security Program charter and associated policies
+      - Led SOC 2 compliance efforts, coordinating data scoping and third-party audits
+      - Established Business Continuity (BCP) and Disaster Recovery (DR) plans
+      - Centralized IAM via Entra ID implementing RBAC, automated user provisioning, and hybrid authentication
+      - Deployed and operationalized Microsoft Security Center and Sentinel
+
+  - company: T. Rowe Price
+    title: Enterprise Security Architect
+    period: June 2009 – June 2018
+    highlights:
+      - Designed and championed the Enterprise Security Assessments program
+      - Developed security engineering standards for Microsoft Office 365 and cloud migrations
+      - Designed reference architectures for AWS, Azure, and GCP adoption
+      - Developed AWS multi-account strategy optimizing business segmentation and reducing security blast radius
+      - Defined enterprise logging strategy supporting development, operations, and security teams
+
+  - company: Comsys (T. Rowe Price)
+    title: Security Consultant
+    period: June 2006 – June 2009
+    highlights:
+      - Designed and deployed the first SIEM solution enabling security visibility outside classic detection models
+      - Implemented perimeter security technologies including firewalls, proxies, and email security gateways
+      - Designed and delivered PoC for Linux adoption to replace big-box Unix systems
+
+services:
+  - id: cloud-security-assessments
+    name: Cloud Security Assessments
+    short_description: Public exposure, risk assessments, and compliance evaluation
+    description: |
+      Comprehensive cloud security assessments using an Observe, Plan, Report methodology.
+      Identify misconfigurations, vulnerabilities, and compliance gaps across AWS, Azure, and GCP environments.
+    icon: shield-check
+    frameworks:
+      - NIST 800-53
+      - FedRAMP
+      - SOC 2
+      - CIS Benchmarks
+      - ISO 27001
+
+  - id: devsecops
+    name: DevSecOps & Automation
+    short_description: Secure CI/CD pipelines and Infrastructure as Code
+    description: |
+      Design and implement secure software development lifecycles with automated security validation,
+      Infrastructure as Code (Terraform, CloudFormation), and CI/CD pipeline security integrations.
+    icon: code
+    technologies:
+      - GitHub Actions
+      - Jenkins
+      - Terraform
+      - CloudFormation
+      - Checkov
+      - Snyk
+      - Veracode
+
+  - id: cloud-architecture
+    name: Cloud Architecture & Migration
+    short_description: Secure cloud adoption and hybrid solutions
+    description: |
+      Reference architectures for secure cloud migration and multi-cloud adoption.
+      Multi-account strategies, network segmentation, and scalable security patterns.
+    icon: cloud
+    platforms:
+      - AWS
+      - Azure
+      - GCP
+
+  - id: compliance-automation
+    name: Compliance Automation
+    short_description: Continuous monitoring and security guardrails
+    description: |
+      Automated compliance enforcement using cloud-native services. Continuous monitoring,
+      policy enforcement, and real-time risk management with automated remediation pipelines.
+    icon: clipboard-check
+    capabilities:
+      - Security Hub integration
+      - EventBridge automation
+      - Lambda-based remediation
+      - Slack/Jira alerting
+
+  - id: identity-management
+    name: Identity & Access Management
+    short_description: RBAC, SSO, and privileged access management
+    description: |
+      Enterprise identity governance with Role-Based Access Control, federated authentication (SAML/SSO),
+      and privileged identity management. Integrations with Active Directory, Entra ID, and Okta.
+    icon: users
+    technologies:
+      - Entra ID (Azure AD)
+      - Active Directory
+      - Okta
+      - SAML/SSO
+      - PIM/PAM
+
+  - id: defensive-security
+    name: Defensive Network Design
+    short_description: Layered security through automation and education
+    description: |
+      Blue team operations including threat detection, monitoring, and incident response.
+      System hardening to CIS Benchmarks and DISA STIG compliance across cloud and on-prem environments.
+    icon: shield
+    areas:
+      - SIEM (Elastic, Sentinel, Splunk)
+      - Endpoint security
+      - Network segmentation
+      - Perimeter security
+
+  - id: security-assessments
+    name: Security Program Development
+    short_description: Charter, policies, and security program maturity
+    description: |
+      Build and mature security programs from charter through implementation.
+      Security assessments, third-party risk management, and compliance coordination.
+    icon: file-text
+    deliverables:
+      - Security program charter
+      - Policy development
+      - Risk assessments
+      - SOC 2 preparation
+
+skills:
+  technical:
+    - Technical & Executive Documentation
+    - Detail-Oriented Problem-Solving
+    - Rapid Technology Adaptation
+    - Process Automation & Optimization
+    - Project Leadership & Team Management
+
+  cloud_platforms:
+    - name: AWS
+      level: Expert
+      services:
+        - Security Hub
+        - IAM
+        - Lambda
+        - EventBridge
+        - CloudFormation
+        - S3
+        - CloudFront
+        - Route 53
+        - Organizations
+    - name: Azure
+      level: Advanced
+      services:
+        - Entra ID
+        - Defender
+        - Sentinel
+        - M365 Security
+    - name: GCP
+      level: Intermediate
+
+  tools:
+    iac:
+      - Terraform
+      - CloudFormation
+      - ARM Templates
+      - HashiCorp Packer
+    cicd:
+      - GitHub Actions
+      - Jenkins
+      - Python
+    security_scanning:
+      - Snyk
+      - Veracode
+      - Checkov
+      - PrismaCloud
+      - Wiz
+      - CrowdStrike
+    siem:
+      - Elastic
+      - Microsoft Sentinel
+      - Splunk
+    scripting:
+      - Python
+      - Bash
+      - PowerShell
+
+  operating_systems:
+    - Amazon Linux
+    - Ubuntu
+    - Red Hat
+    - CentOS
+    - Alpine
+    - Windows Server

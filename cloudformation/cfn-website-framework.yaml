@@ -426,19 +426,58 @@ Resources:
         DNSName: !GetAtt CloudFrontDistribution.DomainName
         EvaluateTargetHealth: false
 
+  Route53RecordWWW:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Sub "www.${DomainName}"
+      Type: A
+      AliasTarget:
+        HostedZoneId: Z2FDTNDATAQYW2 # This is the fixed CloudFront Hosted Zone ID
+        DNSName: !GetAtt CloudFrontDistribution.DomainName
+        EvaluateTargetHealth: false
+
 Outputs:
   WebsiteURL:
     Description: The URL for the website
+    Value: !Sub "https://${DomainName}"
+
+  CloudFrontDistributionId:
+    Description: The CloudFront Distribution ID (for cache invalidation)
+    Value: !Ref CloudFrontDistribution
+    Export:
+      Name: !Sub "${AWS::StackName}-CloudFrontDistributionId"
+
+  CloudFrontDomainName:
+    Description: The CloudFront distribution domain name
     Value: !GetAtt CloudFrontDistribution.DomainName
-  S3BucketName:
-    Description: "The name of the S3 Bucket"
+
+  WebsiteBucketName:
+    Description: The name of the S3 hosting bucket
+    Value: !Ref S3HostingBucket
+    Export:
+      Name: !Sub "${AWS::StackName}-WebsiteBucketName"
+
+  WebsiteBucketArn:
+    Description: The ARN of the S3 hosting bucket
+    Value: !GetAtt S3HostingBucket.Arn
+
+  S3AccessLoggingBucketName:
+    Description: The name of the S3 access logging bucket
     Value: !Ref S3AccessLoggingBucket
-  S3BucketArn:
-    Description: "The ARN of the S3 Bucket"
-    Value: !GetAtt S3AccessLoggingBucket.Arn
+
+  CloudFrontLoggingBucketName:
+    Description: The name of the CloudFront logging bucket
+    Value: !Ref CloudFrontLoggingBucket
+
+  KMSKeyArn:
+    Description: The ARN of the KMS key for S3 encryption
+    Value: !GetAtt S3KMSKey.Arn
+
   SQSQueueName:
-    Description: "The name of the SQS Queue"
+    Description: The name of the SQS Queue
     Value: !Ref OpsQueue
+
   SQSQueueArn:
-    Description: "The ARN of the SQS Queue"
+    Description: The ARN of the SQS Queue
     Value: !GetAtt OpsQueue.Arn
