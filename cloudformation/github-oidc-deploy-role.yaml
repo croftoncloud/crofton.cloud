@@ -82,7 +82,7 @@ Resources:
       PolicyDocument:
         Version: '2012-10-17'
         Statement:
-          - Sid: CloudFormationAccess
+          - Sid: CloudFormationStackAccess
             Effect: Allow
             Action:
               - cloudformation:CreateStack
@@ -92,10 +92,19 @@ Resources:
               - cloudformation:DescribeStackEvents
               - cloudformation:DescribeStackResources
               - cloudformation:GetTemplate
-              - cloudformation:ValidateTemplate
               - cloudformation:ListStacks
+              - cloudformation:CreateChangeSet
+              - cloudformation:DeleteChangeSet
+              - cloudformation:DescribeChangeSet
+              - cloudformation:ExecuteChangeSet
+              - cloudformation:ListChangeSets
             Resource:
               - !Sub 'arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectPrefix}-*'
+          - Sid: CloudFormationValidate
+            Effect: Allow
+            Action:
+              - cloudformation:ValidateTemplate
+            Resource: '*'
 
   # Policy for S3 website bucket management
   S3WebsitePolicy:
