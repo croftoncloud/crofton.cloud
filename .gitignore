@@ -144,7 +144,7 @@ venv.bak/
 .ropeproject
 
 # mkdocs documentation
-/site
+# /site - commented out; we use site/ for static site generator
 
 # mypy
 .mypy_cache/
