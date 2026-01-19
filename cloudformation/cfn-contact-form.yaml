@@ -31,9 +31,64 @@ Parameters:
       - prod
 
 Resources:
+  # KMS Key for contact form encryption
+  ContactFormKmsKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: KMS key for contact form Lambda and CloudWatch Logs encryption
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: EnableRootPermissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+            Action: 'kms:*'
+            Resource: '*'
+          - Sid: AllowCloudWatchLogs
+            Effect: Allow
+            Principal:
+              Service: !Sub 'logs.${AWS::Region}.amazonaws.com'
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: '*'
+            Condition:
+              ArnLike:
+                kms:EncryptionContext:aws:logs:arn: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:*'
+          - Sid: AllowLambdaService
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action:
+              - kms:Decrypt
+              - kms:GenerateDataKey*
+            Resource: '*'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectPrefix
+
+  ContactFormKmsAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub 'alias/${ProjectPrefix}-contact-form'
+      TargetKeyId: !Ref ContactFormKmsKey
+
   # Lambda Execution Role
   ContactFormLambdaRole:
     Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: Role name must be stable for Lambda function references
+      checkov:
+        skip:
+          - id: CKV_AWS_33
+            comment: Explicit role name required for stable references and predictable naming
     Properties:
       RoleName: !Sub '${ProjectPrefix}-contact-form-lambda-role'
       Description: Execution role for contact form Lambda function
@@ -57,6 +112,15 @@ Resources:
                   - ses:SendEmail
                   - ses:SendRawEmail
                 Resource: !Sub 'arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/*'
+        - PolicyName: KMSDecrypt
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: AllowKMSDecrypt
+                Effect: Allow
+                Action:
+                  - kms:Decrypt
+                Resource: !GetAtt ContactFormKmsKey.Arn
       Tags:
         - Key: Project
           Value: !Ref ProjectPrefix
@@ -71,8 +135,6 @@ Resources:
         rules_to_suppress:
           - id: W89
             reason: VPC configuration not required for this simple email-sending function
-          - id: W92
-            reason: ReservedConcurrentExecutions not needed for low-traffic contact form
     Properties:
       FunctionName: !Sub '${ProjectPrefix}-contact-form'
       Description: Handles contact form submissions and sends email via SES
@@ -81,6 +143,8 @@ Resources:
       Role: !GetAtt ContactFormLambdaRole.Arn
       Timeout: 30
       MemorySize: 128
+      ReservedConcurrentExecutions: 5
+      KmsKeyArn: !GetAtt ContactFormKmsKey.Arn
       Environment:
         Variables:
           RECIPIENT_EMAIL: !Ref RecipientEmail
@@ -162,14 +226,10 @@ Resources:
   # CloudWatch Log Group for API Gateway
   ApiAccessLogGroup:
     Type: AWS::Logs::LogGroup
-    Metadata:
-      cfn_nag:
-        rules_to_suppress:
-          - id: W84
-            reason: KMS encryption optional for API access logs
     Properties:
       LogGroupName: !Sub '/aws/apigateway/${ProjectPrefix}-contact-form-api'
       RetentionInDays: 30
+      KmsKeyId: !GetAtt ContactFormKmsKey.Arn
       Tags:
         - Key: Project
           Value: !Ref ProjectPrefix
@@ -177,14 +237,10 @@ Resources:
   # CloudWatch Log Group for Lambda
   LambdaLogGroup:
     Type: AWS::Logs::LogGroup
-    Metadata:
-      cfn_nag:
-        rules_to_suppress:
-          - id: W84
-            reason: KMS encryption optional for Lambda logs
     Properties:
       LogGroupName: !Sub '/aws/lambda/${ProjectPrefix}-contact-form'
       RetentionInDays: 30
+      KmsKeyId: !GetAtt ContactFormKmsKey.Arn
       Tags:
         - Key: Project
           Value: !Ref ProjectPrefix
