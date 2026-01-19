@@ -117,8 +117,10 @@ python3 deploy.py --domain <DOMAIN> --prefix <PREFIX>
 | Workflow | Trigger | Actions |
 |----------|---------|---------|
 | Lint | Push to any branch | cfn-lint, cfn-nag, pylint |
-| SAST | Push to main/develop | Security scanning with SARIF upload |
+| SAST | PR/Push to main | Security scanning with SARIF upload |
 | Deploy | Push to main | Generate site, deploy CFN, sync S3, invalidate cache |
+
+**Branching**: GitHub Flow - feature branches merge directly to main via PR.
 
 ## Security Features
 
