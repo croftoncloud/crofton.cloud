@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+
+{% block title %}Resume{% endblock %}
+
+{% block content %}
+<section class="page-header">
+    <div class="container">
+        <h1>Resume</h1>
+        <p>{{ profile.title }} with extensive experience in cloud security and DevSecOps</p>
+    </div>
+</section>
+
+<section class="resume-content">
+    <div class="container">
+        <div class="resume-grid">
+            <aside class="resume-sidebar">
+                <div class="sidebar-section">
+                    <h3>Contact</h3>
+                    <ul class="contact-list">
+                        <li>
+                            <strong>Location:</strong>
+                            <span>{{ profile.location }}</span>
+                        </li>
+                        <li>
+                            <strong>Email:</strong>
+                            <a href="mailto:{{ profile.email }}">{{ profile.email }}</a>
+                        </li>
+                        <li>
+                            <strong>LinkedIn:</strong>
+                            <a href="{{ profile.linkedin }}" target="_blank" rel="noopener">Profile</a>
+                        </li>
+                        <li>
+                            <strong>GitHub:</strong>
+                            <a href="{{ profile.github }}" target="_blank" rel="noopener">Profile</a>
+                        </li>
+                    </ul>
+                </div>
+
+                <div class="sidebar-section">
+                    <h3>Certifications</h3>
+                    <h4>AWS</h4>
+                    <ul class="cert-list-compact">
+                        {% for cert in certifications.aws %}
+                        <li>{{ cert }}</li>
+                        {% endfor %}
+                    </ul>
+                    <h4>Microsoft</h4>
+                    <ul class="cert-list-compact">
+                        {% for cert in certifications.microsoft %}
+                        <li>{{ cert }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+
+                <div class="sidebar-section">
+                    <h3>Skills</h3>
+                    <h4>Cloud Platforms</h4>
+                    <ul class="skills-list">
+                        {% for platform in skills.cloud_platforms %}
+                        <li>
+                            <span class="skill-name">{{ platform.name }}</span>
+                            <span class="skill-level {{ platform.level | lower }}">{{ platform.level }}</span>
+                        </li>
+                        {% endfor %}
+                    </ul>
+
+                    <h4>IaC & CI/CD</h4>
+                    <ul class="tag-list-compact">
+                        {% for tool in skills.tools.iac %}
+                        <li>{{ tool }}</li>
+                        {% endfor %}
+                        {% for tool in skills.tools.cicd %}
+                        <li>{{ tool }}</li>
+                        {% endfor %}
+                    </ul>
+
+                    <h4>Security Tools</h4>
+                    <ul class="tag-list-compact">
+                        {% for tool in skills.tools.security_scanning %}
+                        <li>{{ tool }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </aside>
+
+            <main class="resume-main">
+                <section class="resume-section">
+                    <h2>Summary</h2>
+                    <p class="summary-text">{{ summary }}</p>
+                </section>
+
+                <section class="resume-section">
+                    <h2>Experience</h2>
+                    {% for job in experience %}
+                    <article class="job">
+                        <header class="job-header">
+                            <h3>{{ job.title }}</h3>
+                            <p class="company">{{ job.company }}</p>
+                            <p class="period">{{ job.period }}</p>
+                        </header>
+                        <ul class="job-highlights">
+                            {% for highlight in job.highlights %}
+                            <li>{{ highlight }}</li>
+                            {% endfor %}
+                        </ul>
+                    </article>
+                    {% endfor %}
+                </section>
+            </main>
+        </div>
+    </div>
+</section>
+{% endblock %}

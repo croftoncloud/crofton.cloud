@@ -262,6 +262,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Generate static site
+        working-directory: site
+        run: |
+          python generate.py --output-dir ../dist --api-endpoint "{{API_ENDPOINT}}"
+          echo "Generated files:"
+          ls -la ../dist/
+
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -276,23 +291,26 @@ jobs:
 
       - name: Sync content to S3
         run: |
-          # Upload HTML files
-          aws s3 cp cloudformation/index.html s3://${{ env.DOMAIN_NAME }}/index.html \
-            --content-type "text/html"
-          aws s3 cp cloudformation/resume.html s3://${{ env.DOMAIN_NAME }}/resume.html \
-            --content-type "text/html"
-          aws s3 cp cloudformation/contact.html s3://${{ env.DOMAIN_NAME }}/contact.html \
-            --content-type "text/html"
+          # Sync generated site to S3 (non-HTML files with long cache)
+          aws s3 sync dist/ s3://${{ env.DOMAIN_NAME }}/ \
+            --delete \
+            --exclude "*.html" \
+            --cache-control "max-age=31536000"
 
-          # Upload CSS if exists
-          if [ -f "cloudformation/styles.css" ]; then
-            aws s3 cp cloudformation/styles.css s3://${{ env.DOMAIN_NAME }}/styles.css \
-              --content-type "text/css"
-          fi
+          # Upload HTML with shorter cache
+          for html_file in dist/*.html; do
+            filename=$(basename "$html_file")
+            aws s3 cp "$html_file" "s3://${{ env.DOMAIN_NAME }}/$filename" \
+              --content-type "text/html" \
+              --cache-control "max-age=3600"
+          done
 
           echo "### Content Deployed" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Files uploaded to s3://${{ env.DOMAIN_NAME }}/" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Generated pages:" >> $GITHUB_STEP_SUMMARY
+          ls -1 dist/*.html | xargs -I {} basename {} >> $GITHUB_STEP_SUMMARY
 
   invalidate-cache:
     name: Invalidate CloudFront Cache

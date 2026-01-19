@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+
+{% block title %}Services{% endblock %}
+
+{% block content %}
+<section class="page-header">
+    <div class="container">
+        <h1>Services</h1>
+        <p>Cloud security consulting, DevSecOps implementation, and infrastructure automation</p>
+    </div>
+</section>
+
+<section class="services-list">
+    <div class="container">
+        {% for service in services %}
+        <article class="service-detail" id="{{ service.id }}">
+            <div class="service-header">
+                <h2>{{ service.name }}</h2>
+                <p class="service-short">{{ service.short_description }}</p>
+            </div>
+            <div class="service-body">
+                <p class="service-description">{{ service.description }}</p>
+
+                {% if service.frameworks %}
+                <div class="service-meta">
+                    <h4>Frameworks & Standards</h4>
+                    <ul class="tag-list">
+                        {% for framework in service.frameworks %}
+                        <li class="tag">{{ framework }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
+
+                {% if service.technologies %}
+                <div class="service-meta">
+                    <h4>Technologies</h4>
+                    <ul class="tag-list">
+                        {% for tech in service.technologies %}
+                        <li class="tag">{{ tech }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
+
+                {% if service.platforms %}
+                <div class="service-meta">
+                    <h4>Platforms</h4>
+                    <ul class="tag-list">
+                        {% for platform in service.platforms %}
+                        <li class="tag">{{ platform }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
+
+                {% if service.capabilities %}
+                <div class="service-meta">
+                    <h4>Capabilities</h4>
+                    <ul class="tag-list">
+                        {% for cap in service.capabilities %}
+                        <li class="tag">{{ cap }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
+
+                {% if service.areas %}
+                <div class="service-meta">
+                    <h4>Focus Areas</h4>
+                    <ul class="tag-list">
+                        {% for area in service.areas %}
+                        <li class="tag">{{ area }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
+
+                {% if service.deliverables %}
+                <div class="service-meta">
+                    <h4>Deliverables</h4>
+                    <ul class="tag-list">
+                        {% for item in service.deliverables %}
+                        <li class="tag">{{ item }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
+            </div>
+        </article>
+        {% endfor %}
+    </div>
+</section>
+
+<section class="cta-section">
+    <div class="container">
+        <h2>Ready to get started?</h2>
+        <p>Let's discuss how I can help secure your cloud infrastructure.</p>
+        <a href="/contact.html" class="btn btn-primary">Contact Me</a>
+    </div>
+</section>
+{% endblock %}
