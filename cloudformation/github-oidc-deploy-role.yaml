@@ -385,6 +385,12 @@ Resources:
   APIGatewayPolicy:
     Type: AWS::IAM::Policy
     Metadata:
+      cfn-lint:
+        config:
+          ignore_checks:
+            # W3037 false positive: apigateway:TagResource and apigateway:UntagResource are valid
+            # IAM actions per AWS documentation, but cfn-lint has an outdated action list
+            - W3037
       cfn_nag:
         rules_to_suppress:
           - id: W12
