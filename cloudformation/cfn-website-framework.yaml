@@ -55,13 +55,9 @@ Resources:
 
   OpsQueue:
     Type: 'AWS::SQS::Queue'
-    Metadata:
-      cfn_nag:
-        rules_to_suppress:
-          - id: W48
-            reason: "Ignoring KMS key, uses SSE-SQS"
     Properties:
       QueueName: !Sub '${ProjectPrefix}-${AWS::AccountId}-${AWS::Region}'
+      KmsMasterKeyId: 'alias/aws/sqs'
       MessageRetentionPeriod: 345600
       ReceiveMessageWaitTimeSeconds: 20
       RedrivePolicy:
@@ -81,7 +77,7 @@ Resources:
             Effect: 'Allow'
             Principal:
               Service: 's3.amazonaws.com'
-            Action: 
+            Action:
               - SQS:SendMessage
             Resource: !GetAtt 'OpsQueue.Arn'
             Condition:
@@ -90,7 +86,7 @@ Resources:
           - Sid: 'Allow SQS Notifications'
             Effect: 'Allow'
             Principal:
-              Service: 'sqs.amazonaws.com'  
+              Service: 'sqs.amazonaws.com'
             Action:
               - sqs:SendMessage
             Resource: !GetAtt 'OpsQueue.Arn'
@@ -102,6 +98,10 @@ Resources:
         rules_to_suppress:
           - id: W35
             reason: "Ignoring Access Logging as this is an Access Logging bucket."
+      checkov:
+        skip:
+          - id: CKV_AWS_18
+            comment: This is a logging destination bucket. Enabling access logging would cause circular logging.
     Properties:
       BucketEncryption:
         ServerSideEncryptionConfiguration:
@@ -151,7 +151,7 @@ Resources:
         Statement:
           - Sid: S3ServerAccessLogs
             Effect: Allow
-            Principal: 
+            Principal:
               Service:
                 - logging.s3.amazonaws.com
             Action: s3:PutObject
@@ -173,7 +173,7 @@ Resources:
             Effect: Allow
             Principal:
               AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
-            Action: 
+            Action:
               - s3:GetBucketPolicy
               - s3:PutBucketPolicy
             Resource: !Sub "arn:${AWS::Partition}:s3:::${S3AccessLoggingBucket}"
@@ -189,6 +189,10 @@ Resources:
         rules_to_suppress:
           - id: W35
             reason: "Access logging destination buckets should not have access logging enabled."
+      checkov:
+        skip:
+          - id: CKV_AWS_18
+            comment: This is a logging destination bucket. Enabling access logging would cause circular logging.
     Properties:
       BucketName: !Sub '${ProjectPrefix}-cfaccesslogs-${AWS::AccountId}-${AWS::Region}'
       BucketEncryption:
@@ -369,10 +373,15 @@ Resources:
 
   CloudFrontDistribution:
     Type: AWS::CloudFront::Distribution
-    DependsOn: 
+    DependsOn:
       - CloudFrontLoggingBucketPolicy
       - S3HostingBucketPolicy
       - S3KMSAlias
+    Metadata:
+      checkov:
+        skip:
+          - id: CKV_AWS_68
+            comment: WAF not required for portfolio site. Geo-restriction to US/CA provides sufficient protection for static content.
     Properties:
       DistributionConfig:
         Aliases:
@@ -426,19 +435,58 @@ Resources:
         DNSName: !GetAtt CloudFrontDistribution.DomainName
         EvaluateTargetHealth: false
 
+  Route53RecordWWW:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Sub "www.${DomainName}"
+      Type: A
+      AliasTarget:
+        HostedZoneId: Z2FDTNDATAQYW2 # This is the fixed CloudFront Hosted Zone ID
+        DNSName: !GetAtt CloudFrontDistribution.DomainName
+        EvaluateTargetHealth: false
+
 Outputs:
   WebsiteURL:
     Description: The URL for the website
+    Value: !Sub "https://${DomainName}"
+
+  CloudFrontDistributionId:
+    Description: The CloudFront Distribution ID (for cache invalidation)
+    Value: !Ref CloudFrontDistribution
+    Export:
+      Name: !Sub "${AWS::StackName}-CloudFrontDistributionId"
+
+  CloudFrontDomainName:
+    Description: The CloudFront distribution domain name
     Value: !GetAtt CloudFrontDistribution.DomainName
-  S3BucketName:
-    Description: "The name of the S3 Bucket"
+
+  WebsiteBucketName:
+    Description: The name of the S3 hosting bucket
+    Value: !Ref S3HostingBucket
+    Export:
+      Name: !Sub "${AWS::StackName}-WebsiteBucketName"
+
+  WebsiteBucketArn:
+    Description: The ARN of the S3 hosting bucket
+    Value: !GetAtt S3HostingBucket.Arn
+
+  S3AccessLoggingBucketName:
+    Description: The name of the S3 access logging bucket
     Value: !Ref S3AccessLoggingBucket
-  S3BucketArn:
-    Description: "The ARN of the S3 Bucket"
-    Value: !GetAtt S3AccessLoggingBucket.Arn
+
+  CloudFrontLoggingBucketName:
+    Description: The name of the CloudFront logging bucket
+    Value: !Ref CloudFrontLoggingBucket
+
+  KMSKeyArn:
+    Description: The ARN of the KMS key for S3 encryption
+    Value: !GetAtt S3KMSKey.Arn
+
   SQSQueueName:
-    Description: "The name of the SQS Queue"
+    Description: The name of the SQS Queue
     Value: !Ref OpsQueue
+
   SQSQueueArn:
-    Description: "The ARN of the SQS Queue"
+    Description: The ARN of the SQS Queue
     Value: !GetAtt OpsQueue.Arn
