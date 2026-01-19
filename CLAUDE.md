@@ -121,6 +121,18 @@ pre-commit install               # Install git hooks
 - **Push to main/develop**: SAST scanning with portfolio-code-scanner
 - **Push to main**: Full AWS deployment via OIDC
 
+### Release Process
+
+1. Create PR from `develop` to `main`
+2. Review and approve the PR
+3. Merge using **squash and merge** or **rebase and merge** (avoid merge commits)
+4. Monitor the deploy workflow to ensure AWS deployment succeeds
+5. After successful deployment, sync main back to develop:
+   - Create PR from `main` to `develop`
+   - Merge to keep branches in sync
+
+**Important**: Always sync main back to develop after a release to prevent branch divergence.
+
 ### Pre-commit Hooks
 
 - Trailing whitespace, EOF fixes
