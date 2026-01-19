@@ -306,6 +306,10 @@ Resources:
               - kms:Encrypt
               - kms:Decrypt
               - kms:GenerateDataKey
+              # Required for Lambda KMS-encrypted environment variables
+              - kms:CreateGrant
+              - kms:RetireGrant
+              - kms:ListGrants
               # Required for stack deletion
               - kms:ScheduleKeyDeletion
             Resource: '*'
