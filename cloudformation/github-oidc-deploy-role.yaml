@@ -427,6 +427,15 @@ Resources:
   # Policy for CloudWatch Logs (Lambda and API Gateway logging)
   CloudWatchLogsPolicy:
     Type: AWS::IAM::Policy
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W12
+            reason: logs:DescribeLogGroups is an account-level action requiring Resource '*'
+      checkov:
+        skip:
+          - id: CKV_AWS_111
+            comment: logs:DescribeLogGroups requires Resource '*'. OIDC trust restricts to this repository only.
     Properties:
       PolicyName: CloudWatchLogsManagement
       Roles:
@@ -443,11 +452,15 @@ Resources:
               - logs:DeleteRetentionPolicy
               - logs:TagLogGroup
               - logs:UntagLogGroup
-              - logs:DescribeLogGroups
               - logs:ListTagsLogGroup
             Resource:
               - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ProjectPrefix}-*'
               - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/apigateway/${ProjectPrefix}-*'
+          - Sid: CloudWatchLogsDescribe
+            Effect: Allow
+            Action:
+              - logs:DescribeLogGroups
+            Resource: '*'
 
   # Policy for SQS (event notifications)
   SQSPolicy:
