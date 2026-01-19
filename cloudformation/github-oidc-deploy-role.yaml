@@ -142,10 +142,13 @@ Resources:
               - s3:PutBucketTagging
               - s3:GetBucketOwnershipControls
               - s3:PutBucketOwnershipControls
+              - s3:GetBucketAcl
+              - s3:PutBucketAcl
             Resource:
               - !Sub 'arn:aws:s3:::${DomainName}'
-              - !Sub 'arn:aws:s3:::${ProjectPrefix}-s3-access-logs-*'
-              - !Sub 'arn:aws:s3:::${ProjectPrefix}-cloudfront-access-logs-*'
+              # Bucket names match cfn-website-framework.yaml naming convention
+              - !Sub 'arn:aws:s3:::${ProjectPrefix}-s3accesslogs-*'
+              - !Sub 'arn:aws:s3:::${ProjectPrefix}-cfaccesslogs-*'
           - Sid: S3ObjectOperations
             Effect: Allow
             Action:
@@ -155,8 +158,8 @@ Resources:
               - s3:ListBucket
             Resource:
               - !Sub 'arn:aws:s3:::${DomainName}/*'
-              - !Sub 'arn:aws:s3:::${ProjectPrefix}-s3-access-logs-*/*'
-              - !Sub 'arn:aws:s3:::${ProjectPrefix}-cloudfront-access-logs-*/*'
+              - !Sub 'arn:aws:s3:::${ProjectPrefix}-s3accesslogs-*/*'
+              - !Sub 'arn:aws:s3:::${ProjectPrefix}-cfaccesslogs-*/*'
 
   # Policy for CloudFront management
   CloudFrontPolicy:
@@ -299,9 +302,12 @@ Resources:
               - kms:ListKeys
               - kms:TagResource
               - kms:UntagResource
+              - kms:ListResourceTags
               - kms:Encrypt
               - kms:Decrypt
               - kms:GenerateDataKey
+              # Required for stack deletion
+              - kms:ScheduleKeyDeletion
             Resource: '*'
 
   # Policy for SES (contact form)
@@ -361,7 +367,9 @@ Resources:
               - lambda:DeleteFunction
               - lambda:GetFunction
               - lambda:GetFunctionConfiguration
+              - lambda:GetPolicy
               - lambda:ListFunctions
+              - lambda:ListTags
               - lambda:AddPermission
               - lambda:RemovePermission
               - lambda:TagResource
@@ -377,6 +385,12 @@ Resources:
   APIGatewayPolicy:
     Type: AWS::IAM::Policy
     Metadata:
+      cfn-lint:
+        config:
+          ignore_checks:
+            # W3037 false positive: apigateway:TagResource and apigateway:UntagResource are valid
+            # IAM actions per AWS documentation, but cfn-lint has an outdated action list
+            - W3037
       cfn_nag:
         rules_to_suppress:
           - id: W12
@@ -400,6 +414,9 @@ Resources:
               - apigateway:PUT
               - apigateway:DELETE
               - apigateway:PATCH
+              # IAM action-based tagging (used by CloudFormation)
+              - apigateway:TagResource
+              - apigateway:UntagResource
             Resource:
               - !Sub 'arn:aws:apigateway:${AWS::Region}::/restapis'
               - !Sub 'arn:aws:apigateway:${AWS::Region}::/restapis/*'
@@ -411,12 +428,16 @@ Resources:
               - apigateway:PUT
               - apigateway:DELETE
               - apigateway:PATCH
+              # IAM action-based tagging (used by CloudFormation)
+              - apigateway:TagResource
+              - apigateway:UntagResource
             Resource:
               - !Sub 'arn:aws:apigateway:${AWS::Region}::/apis'
               - !Sub 'arn:aws:apigateway:${AWS::Region}::/apis/*'
           - Sid: APIGatewayTagging
             Effect: Allow
             Action:
+              # HTTP method-based tagging endpoint
               - apigateway:POST
               - apigateway:GET
               - apigateway:PUT
@@ -450,9 +471,14 @@ Resources:
               - logs:DeleteLogGroup
               - logs:PutRetentionPolicy
               - logs:DeleteRetentionPolicy
+              # Legacy tagging API
               - logs:TagLogGroup
               - logs:UntagLogGroup
               - logs:ListTagsLogGroup
+              # New tagging API (used by CloudFormation)
+              - logs:TagResource
+              - logs:UntagResource
+              - logs:ListTagsForResource
             Resource:
               - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ProjectPrefix}-*'
               - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/apigateway/${ProjectPrefix}-*'
@@ -517,6 +543,7 @@ Resources:
               - iam:ListAttachedRolePolicies
               - iam:TagRole
               - iam:UntagRole
+              - iam:ListRoleTags
             Resource:
               - !Sub 'arn:aws:iam::${AWS::AccountId}:role/${ProjectPrefix}-*'
           - Sid: IAMPassRole
