@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+
+{% block title %}Home{% endblock %}
+
+{% block content %}
+<section class="hero">
+    <div class="container">
+        <h1>{{ profile.name }}</h1>
+        <p class="hero-title">{{ profile.title }}</p>
+        <p class="hero-summary">{{ summary | truncate(200) }}</p>
+        <div class="hero-cta">
+            <a href="/services.html" class="btn btn-primary">View Services</a>
+            <a href="/contact.html" class="btn btn-secondary">Get in Touch</a>
+        </div>
+    </div>
+</section>
+
+<section class="certifications">
+    <div class="container">
+        <h2>Certifications</h2>
+        <div class="cert-grid">
+            <div class="cert-group">
+                <h3>AWS</h3>
+                <ul class="cert-list">
+                    {% for cert in certifications.aws %}
+                    <li>{{ cert }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            <div class="cert-group">
+                <h3>Microsoft</h3>
+                <ul class="cert-list">
+                    {% for cert in certifications.microsoft %}
+                    <li>{{ cert }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="services-preview">
+    <div class="container">
+        <h2>Services</h2>
+        <div class="services-grid">
+            {% for service in services[:4] %}
+            <div class="service-card">
+                <h3>{{ service.name }}</h3>
+                <p>{{ service.short_description }}</p>
+                <a href="/services.html#{{ service.id }}" class="link-arrow">Learn more</a>
+            </div>
+            {% endfor %}
+        </div>
+        <div class="section-cta">
+            <a href="/services.html" class="btn btn-outline">View All Services</a>
+        </div>
+    </div>
+</section>
+
+<section class="experience-preview">
+    <div class="container">
+        <h2>Recent Experience</h2>
+        <div class="timeline">
+            {% for job in experience[:3] %}
+            <div class="timeline-item">
+                <div class="timeline-marker"></div>
+                <div class="timeline-content">
+                    <h3>{{ job.title }}</h3>
+                    <p class="company">{{ job.company }}</p>
+                    <p class="period">{{ job.period }}</p>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        <div class="section-cta">
+            <a href="/resume.html" class="btn btn-outline">View Full Resume</a>
+        </div>
+    </div>
+</section>
+{% endblock %}

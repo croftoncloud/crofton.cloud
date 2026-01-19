@@ -1,0 +1,271 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: |
+  Serverless contact form infrastructure with Lambda, API Gateway, and SES.
+  Provides a secure endpoint for website contact form submissions.
+
+Parameters:
+  ProjectPrefix:
+    Type: String
+    Description: Prefix for resource naming
+    Default: cc
+    AllowedPattern: '[a-z0-9-]+'
+
+  DomainName:
+    Type: String
+    Description: Domain name for the website (used for CORS and SES)
+
+  RecipientEmail:
+    Type: String
+    Description: Email address to receive contact form submissions
+
+  SenderEmail:
+    Type: String
+    Description: Email address to send from (must be verified in SES)
+
+  Environment:
+    Type: String
+    Description: Deployment environment
+    Default: prod
+    AllowedValues:
+      - dev
+      - prod
+
+Resources:
+  # KMS Key for contact form encryption
+  ContactFormKmsKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: KMS key for contact form Lambda and CloudWatch Logs encryption
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: EnableRootPermissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+            Action: 'kms:*'
+            Resource: '*'
+          - Sid: AllowCloudWatchLogs
+            Effect: Allow
+            Principal:
+              Service: !Sub 'logs.${AWS::Region}.amazonaws.com'
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: '*'
+            Condition:
+              ArnLike:
+                kms:EncryptionContext:aws:logs:arn: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:*'
+          - Sid: AllowLambdaService
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action:
+              - kms:Decrypt
+              - kms:GenerateDataKey*
+            Resource: '*'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectPrefix
+
+  ContactFormKmsAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub 'alias/${ProjectPrefix}-contact-form'
+      TargetKeyId: !Ref ContactFormKmsKey
+
+  # Lambda Execution Role
+  ContactFormLambdaRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: Role name must be stable for Lambda function references
+      checkov:
+        skip:
+          - id: CKV_AWS_33
+            comment: Explicit role name required for stable references and predictable naming
+    Properties:
+      RoleName: !Sub '${ProjectPrefix}-contact-form-lambda-role'
+      Description: Execution role for contact form Lambda function
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: SESEmailSending
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: AllowSESSendEmail
+                Effect: Allow
+                Action:
+                  - ses:SendEmail
+                  - ses:SendRawEmail
+                Resource: !Sub 'arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/*'
+        - PolicyName: KMSDecrypt
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: AllowKMSDecrypt
+                Effect: Allow
+                Action:
+                  - kms:Decrypt
+                Resource: !GetAtt ContactFormKmsKey.Arn
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectPrefix
+        - Key: Purpose
+          Value: ContactFormLambda
+
+  # Lambda Function
+  ContactFormFunction:
+    Type: AWS::Lambda::Function
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W89
+            reason: VPC configuration not required for this simple email-sending function
+    Properties:
+      FunctionName: !Sub '${ProjectPrefix}-contact-form'
+      Description: Handles contact form submissions and sends email via SES
+      Runtime: python3.12
+      Handler: contact_form.handler
+      Role: !GetAtt ContactFormLambdaRole.Arn
+      Timeout: 30
+      MemorySize: 128
+      ReservedConcurrentExecutions: 5
+      KmsKeyArn: !GetAtt ContactFormKmsKey.Arn
+      Environment:
+        Variables:
+          RECIPIENT_EMAIL: !Ref RecipientEmail
+          SENDER_EMAIL: !Ref SenderEmail
+          ALLOWED_ORIGIN: !Sub 'https://${DomainName}'
+      Code:
+        ZipFile: |
+          # Placeholder - actual code deployed separately
+          def handler(event, context):
+              return {'statusCode': 200, 'body': 'Placeholder'}
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectPrefix
+
+  # Lambda Permission for API Gateway
+  ContactFormLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ContactFormFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ContactFormApi}/*'
+
+  # API Gateway HTTP API
+  ContactFormApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub '${ProjectPrefix}-contact-form-api'
+      Description: API for contact form submissions
+      ProtocolType: HTTP
+      CorsConfiguration:
+        AllowOrigins:
+          - !Sub 'https://${DomainName}'
+          - !Sub 'https://www.${DomainName}'
+        AllowMethods:
+          - POST
+          - OPTIONS
+        AllowHeaders:
+          - Content-Type
+          - Authorization
+        MaxAge: 86400
+      Tags:
+        Project: !Ref ProjectPrefix
+
+  # API Gateway Stage
+  ContactFormApiStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref ContactFormApi
+      StageName: !Ref Environment
+      AutoDeploy: true
+      AccessLogSettings:
+        DestinationArn: !GetAtt ApiAccessLogGroup.Arn
+        Format: >-
+          {"requestId":"$context.requestId","ip":"$context.identity.sourceIp",
+          "requestTime":"$context.requestTime","httpMethod":"$context.httpMethod",
+          "routeKey":"$context.routeKey","status":"$context.status",
+          "responseLength":"$context.responseLength","errorMessage":"$context.error.message"}
+      Tags:
+        Project: !Ref ProjectPrefix
+
+  # API Gateway Integration
+  ContactFormIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref ContactFormApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt ContactFormFunction.Arn
+      PayloadFormatVersion: '2.0'
+
+  # API Gateway Route
+  ContactFormRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ContactFormApi
+      RouteKey: 'POST /contact'
+      Target: !Sub 'integrations/${ContactFormIntegration}'
+
+  # CloudWatch Log Group for API Gateway
+  ApiAccessLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/apigateway/${ProjectPrefix}-contact-form-api'
+      RetentionInDays: 30
+      KmsKeyId: !GetAtt ContactFormKmsKey.Arn
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectPrefix
+
+  # CloudWatch Log Group for Lambda
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ProjectPrefix}-contact-form'
+      RetentionInDays: 30
+      KmsKeyId: !GetAtt ContactFormKmsKey.Arn
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectPrefix
+
+Outputs:
+  ApiEndpoint:
+    Description: API Gateway endpoint URL for the contact form
+    Value: !Sub 'https://${ContactFormApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}/contact'
+    Export:
+      Name: !Sub '${AWS::StackName}-ApiEndpoint'
+
+  LambdaFunctionArn:
+    Description: ARN of the contact form Lambda function
+    Value: !GetAtt ContactFormFunction.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-LambdaArn'
+
+  LambdaFunctionName:
+    Description: Name of the contact form Lambda function
+    Value: !Ref ContactFormFunction
+    Export:
+      Name: !Sub '${AWS::StackName}-LambdaName'
+
+  ApiId:
+    Description: API Gateway API ID
+    Value: !Ref ContactFormApi
+    Export:
+      Name: !Sub '${AWS::StackName}-ApiId'

@@ -1,0 +1,532 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: |
+  GitHub OIDC IAM Role for crofton.cloud deployment.
+  Grants GitHub Actions permissions to deploy CloudFormation, manage S3 content,
+  invalidate CloudFront, and manage SES/Lambda for the contact form.
+
+  Prerequisites: GitHub OIDC Provider must already exist in the account.
+  Use the OIDCProviderArn from the portfolio-github-management stack.
+
+Parameters:
+  GitHubOrg:
+    Type: String
+    Default: croftoncloud
+    Description: GitHub organization or username
+
+  GitHubRepo:
+    Type: String
+    Default: crofton.cloud
+    Description: GitHub repository name
+
+  OIDCProviderArn:
+    Type: String
+    Description: |
+      ARN of existing GitHub OIDC provider.
+      Get this from: aws iam list-open-id-connect-providers
+
+  ProjectPrefix:
+    Type: String
+    Default: cc
+    Description: Project prefix used in cfn-website-framework.yaml resources
+
+  DomainName:
+    Type: String
+    Default: crofton.cloud
+    Description: Domain name for the website
+
+Resources:
+  # IAM Role for GitHub Actions
+  GitHubActionsDeployRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: Role name must be stable for GitHub OIDC trust and external references
+    Properties:
+      RoleName: !Sub 'github-actions-${GitHubRepo}'
+      Description: !Sub 'Deployment role for GitHub Actions in ${GitHubOrg}/${GitHubRepo}'
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Ref OIDCProviderArn
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+              StringLike:
+                token.actions.githubusercontent.com:sub: !Sub 'repo:${GitHubOrg}/${GitHubRepo}:*'
+      Tags:
+        - Key: Purpose
+          Value: GitHub Actions Deployment
+        - Key: Repository
+          Value: !Sub '${GitHubOrg}/${GitHubRepo}'
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  # Policy for CloudFormation deployment
+  CloudFormationDeployPolicy:
+    Type: AWS::IAM::Policy
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W12
+            reason: CloudFormation requires broad permissions to manage stacks and their resources
+    Properties:
+      PolicyName: CloudFormationDeploy
+      Roles:
+        - !Ref GitHubActionsDeployRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: CloudFormationStackAccess
+            Effect: Allow
+            Action:
+              - cloudformation:CreateStack
+              - cloudformation:UpdateStack
+              - cloudformation:DeleteStack
+              - cloudformation:DescribeStacks
+              - cloudformation:DescribeStackEvents
+              - cloudformation:DescribeStackResources
+              - cloudformation:GetTemplate
+              - cloudformation:ListStacks
+              - cloudformation:CreateChangeSet
+              - cloudformation:DeleteChangeSet
+              - cloudformation:DescribeChangeSet
+              - cloudformation:ExecuteChangeSet
+              - cloudformation:ListChangeSets
+            Resource:
+              - !Sub 'arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectPrefix}-*'
+          - Sid: CloudFormationValidate
+            Effect: Allow
+            Action:
+              - cloudformation:ValidateTemplate
+            Resource: '*'
+
+  # Policy for S3 website bucket management
+  S3WebsitePolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: S3WebsiteManagement
+      Roles:
+        - !Ref GitHubActionsDeployRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: S3BucketOperations
+            Effect: Allow
+            Action:
+              - s3:CreateBucket
+              - s3:DeleteBucket
+              - s3:ListBucket
+              - s3:GetBucketLocation
+              - s3:GetBucketPolicy
+              - s3:PutBucketPolicy
+              - s3:DeleteBucketPolicy
+              - s3:GetBucketVersioning
+              - s3:PutBucketVersioning
+              - s3:GetEncryptionConfiguration
+              - s3:PutEncryptionConfiguration
+              - s3:GetBucketPublicAccessBlock
+              - s3:PutBucketPublicAccessBlock
+              - s3:GetBucketLogging
+              - s3:PutBucketLogging
+              - s3:GetLifecycleConfiguration
+              - s3:PutLifecycleConfiguration
+              - s3:GetBucketNotification
+              - s3:PutBucketNotification
+              - s3:GetBucketTagging
+              - s3:PutBucketTagging
+              - s3:GetBucketOwnershipControls
+              - s3:PutBucketOwnershipControls
+            Resource:
+              - !Sub 'arn:aws:s3:::${DomainName}'
+              - !Sub 'arn:aws:s3:::${ProjectPrefix}-s3-access-logs-*'
+              - !Sub 'arn:aws:s3:::${ProjectPrefix}-cloudfront-access-logs-*'
+          - Sid: S3ObjectOperations
+            Effect: Allow
+            Action:
+              - s3:GetObject
+              - s3:PutObject
+              - s3:DeleteObject
+              - s3:ListBucket
+            Resource:
+              - !Sub 'arn:aws:s3:::${DomainName}/*'
+              - !Sub 'arn:aws:s3:::${ProjectPrefix}-s3-access-logs-*/*'
+              - !Sub 'arn:aws:s3:::${ProjectPrefix}-cloudfront-access-logs-*/*'
+
+  # Policy for CloudFront management
+  CloudFrontPolicy:
+    Type: AWS::IAM::Policy
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W12
+            reason: CloudFront distributions require account-level resource ARNs
+      checkov:
+        skip:
+          - id: CKV_AWS_111
+            comment: CloudFront ARNs are global and unknown until distribution creation. OIDC trust policy restricts role assumption to this repository only.
+    Properties:
+      PolicyName: CloudFrontManagement
+      Roles:
+        - !Ref GitHubActionsDeployRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: CloudFrontDistributionAccess
+            Effect: Allow
+            Action:
+              - cloudfront:CreateDistribution
+              - cloudfront:UpdateDistribution
+              - cloudfront:DeleteDistribution
+              - cloudfront:GetDistribution
+              - cloudfront:GetDistributionConfig
+              - cloudfront:ListDistributions
+              - cloudfront:CreateInvalidation
+              - cloudfront:GetInvalidation
+              - cloudfront:ListInvalidations
+              - cloudfront:TagResource
+              - cloudfront:UntagResource
+              - cloudfront:ListTagsForResource
+            Resource: '*'
+          - Sid: CloudFrontOACAccess
+            Effect: Allow
+            Action:
+              - cloudfront:CreateOriginAccessControl
+              - cloudfront:UpdateOriginAccessControl
+              - cloudfront:DeleteOriginAccessControl
+              - cloudfront:GetOriginAccessControl
+              - cloudfront:ListOriginAccessControls
+            Resource: '*'
+
+  # Policy for Route53 DNS management
+  Route53Policy:
+    Type: AWS::IAM::Policy
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W12
+            reason: Route53 hosted zone lookup requires list permission on all zones
+      checkov:
+        skip:
+          - id: CKV_AWS_111
+            comment: Route53 zone IDs discovered at runtime. OIDC trust policy restricts role assumption to this repository only.
+    Properties:
+      PolicyName: Route53Management
+      Roles:
+        - !Ref GitHubActionsDeployRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: Route53HostedZoneAccess
+            Effect: Allow
+            Action:
+              - route53:GetHostedZone
+              - route53:ListHostedZones
+              - route53:ListHostedZonesByName
+              - route53:ChangeResourceRecordSets
+              - route53:ListResourceRecordSets
+              - route53:GetChange
+            Resource: '*'
+
+  # Policy for ACM certificate management
+  ACMPolicy:
+    Type: AWS::IAM::Policy
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W12
+            reason: ACM certificate operations require broad resource access for validation
+      checkov:
+        skip:
+          - id: CKV_AWS_111
+            comment: ACM certificate ARNs unknown until creation. OIDC trust policy restricts role assumption to this repository only.
+    Properties:
+      PolicyName: ACMManagement
+      Roles:
+        - !Ref GitHubActionsDeployRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: ACMCertificateAccess
+            Effect: Allow
+            Action:
+              - acm:RequestCertificate
+              - acm:DescribeCertificate
+              - acm:ListCertificates
+              - acm:DeleteCertificate
+              - acm:AddTagsToCertificate
+              - acm:ListTagsForCertificate
+            Resource: '*'
+
+  # Policy for KMS key management (used by S3 encryption)
+  KMSPolicy:
+    Type: AWS::IAM::Policy
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W12
+            reason: KMS key creation requires account-level permissions
+      checkov:
+        skip:
+          - id: CKV_AWS_109
+            comment: KMS key creation and policy management required for CloudFormation to create encrypted S3 buckets. OIDC trust restricts to this repo.
+          - id: CKV_AWS_111
+            comment: KMS key ARNs unknown until creation. OIDC trust policy restricts role assumption to this repository only.
+    Properties:
+      PolicyName: KMSManagement
+      Roles:
+        - !Ref GitHubActionsDeployRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: KMSKeyManagement
+            Effect: Allow
+            Action:
+              - kms:CreateKey
+              - kms:CreateAlias
+              - kms:DeleteAlias
+              - kms:UpdateAlias
+              - kms:DescribeKey
+              - kms:GetKeyPolicy
+              - kms:PutKeyPolicy
+              - kms:EnableKeyRotation
+              - kms:ListAliases
+              - kms:ListKeys
+              - kms:TagResource
+              - kms:UntagResource
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:GenerateDataKey
+            Resource: '*'
+
+  # Policy for SES (contact form)
+  SESPolicy:
+    Type: AWS::IAM::Policy
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W12
+            reason: SES identity ARNs depend on domain verification status
+      checkov:
+        skip:
+          - id: CKV_AWS_111
+            comment: SES identity ARNs depend on domain verification. OIDC trust policy restricts role assumption to this repository only.
+    Properties:
+      PolicyName: SESManagement
+      Roles:
+        - !Ref GitHubActionsDeployRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: SESIdentityManagement
+            Effect: Allow
+            Action:
+              - ses:VerifyDomainIdentity
+              - ses:VerifyDomainDkim
+              - ses:GetIdentityVerificationAttributes
+              - ses:GetIdentityDkimAttributes
+              - ses:DeleteIdentity
+              - ses:ListIdentities
+              - ses:SetIdentityMailFromDomain
+            Resource: '*'
+          - Sid: SESSendingConfiguration
+            Effect: Allow
+            Action:
+              - ses:CreateConfigurationSet
+              - ses:DeleteConfigurationSet
+              - ses:DescribeConfigurationSet
+            Resource: '*'
+
+  # Policy for Lambda (contact form handler)
+  LambdaPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: LambdaManagement
+      Roles:
+        - !Ref GitHubActionsDeployRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: LambdaFunctionManagement
+            Effect: Allow
+            Action:
+              - lambda:CreateFunction
+              - lambda:UpdateFunctionCode
+              - lambda:UpdateFunctionConfiguration
+              - lambda:DeleteFunction
+              - lambda:GetFunction
+              - lambda:GetFunctionConfiguration
+              - lambda:ListFunctions
+              - lambda:AddPermission
+              - lambda:RemovePermission
+              - lambda:TagResource
+              - lambda:UntagResource
+              - lambda:PublishVersion
+              - lambda:CreateAlias
+              - lambda:UpdateAlias
+              - lambda:DeleteAlias
+            Resource:
+              - !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectPrefix}-*'
+
+  # Policy for API Gateway (contact form endpoint)
+  APIGatewayPolicy:
+    Type: AWS::IAM::Policy
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W12
+            reason: API Gateway management requires broad permissions for REST API and HTTP API operations
+      checkov:
+        skip:
+          - id: CKV_AWS_111
+            comment: API Gateway ARNs are dynamic. OIDC trust restricts to this repository only.
+    Properties:
+      PolicyName: APIGatewayManagement
+      Roles:
+        - !Ref GitHubActionsDeployRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: APIGatewayRESTAccess
+            Effect: Allow
+            Action:
+              - apigateway:POST
+              - apigateway:GET
+              - apigateway:PUT
+              - apigateway:DELETE
+              - apigateway:PATCH
+            Resource:
+              - !Sub 'arn:aws:apigateway:${AWS::Region}::/restapis'
+              - !Sub 'arn:aws:apigateway:${AWS::Region}::/restapis/*'
+          - Sid: APIGatewayHTTPAccess
+            Effect: Allow
+            Action:
+              - apigateway:POST
+              - apigateway:GET
+              - apigateway:PUT
+              - apigateway:DELETE
+              - apigateway:PATCH
+            Resource:
+              - !Sub 'arn:aws:apigateway:${AWS::Region}::/apis'
+              - !Sub 'arn:aws:apigateway:${AWS::Region}::/apis/*'
+
+  # Policy for CloudWatch Logs (Lambda and API Gateway logging)
+  CloudWatchLogsPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: CloudWatchLogsManagement
+      Roles:
+        - !Ref GitHubActionsDeployRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: CloudWatchLogsAccess
+            Effect: Allow
+            Action:
+              - logs:CreateLogGroup
+              - logs:DeleteLogGroup
+              - logs:PutRetentionPolicy
+              - logs:DeleteRetentionPolicy
+              - logs:TagLogGroup
+              - logs:UntagLogGroup
+              - logs:DescribeLogGroups
+              - logs:ListTagsLogGroup
+            Resource:
+              - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ProjectPrefix}-*'
+              - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/apigateway/${ProjectPrefix}-*'
+
+  # Policy for SQS (event notifications)
+  SQSPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: SQSManagement
+      Roles:
+        - !Ref GitHubActionsDeployRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: SQSQueueManagement
+            Effect: Allow
+            Action:
+              - sqs:CreateQueue
+              - sqs:DeleteQueue
+              - sqs:GetQueueAttributes
+              - sqs:SetQueueAttributes
+              - sqs:GetQueueUrl
+              - sqs:ListQueues
+              - sqs:TagQueue
+              - sqs:UntagQueue
+            Resource:
+              - !Sub 'arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:${ProjectPrefix}-*'
+
+  # Policy for IAM role management (Lambda execution role)
+  IAMPolicy:
+    Type: AWS::IAM::Policy
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: F4
+            reason: PassRole is required for CloudFormation to assign roles to Lambda functions
+    Properties:
+      PolicyName: IAMRoleManagement
+      Roles:
+        - !Ref GitHubActionsDeployRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: IAMRoleManagement
+            Effect: Allow
+            Action:
+              - iam:CreateRole
+              - iam:DeleteRole
+              - iam:GetRole
+              - iam:UpdateRole
+              - iam:AttachRolePolicy
+              - iam:DetachRolePolicy
+              - iam:PutRolePolicy
+              - iam:DeleteRolePolicy
+              - iam:GetRolePolicy
+              - iam:ListRolePolicies
+              - iam:ListAttachedRolePolicies
+              - iam:TagRole
+              - iam:UntagRole
+            Resource:
+              - !Sub 'arn:aws:iam::${AWS::AccountId}:role/${ProjectPrefix}-*'
+          - Sid: IAMPassRole
+            Effect: Allow
+            Action:
+              - iam:PassRole
+            Resource:
+              - !Sub 'arn:aws:iam::${AWS::AccountId}:role/${ProjectPrefix}-*'
+            Condition:
+              StringEquals:
+                iam:PassedToService:
+                  - lambda.amazonaws.com
+                  - apigateway.amazonaws.com
+
+Outputs:
+  GitHubActionsRoleArn:
+    Description: ARN of the IAM role for GitHub Actions deployment
+    Value: !GetAtt GitHubActionsDeployRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-GitHubActionsRoleArn'
+
+  RoleName:
+    Description: Name of the IAM role
+    Value: !Ref GitHubActionsDeployRole
+
+  DeploymentInstructions:
+    Description: Instructions for setting up GitHub Actions
+    Value: !Sub |
+      1. Add the following secrets to your GitHub repository:
+         - AWS_ACCOUNT_ID: ${AWS::AccountId}
+
+      2. The role ARN for GitHub Actions is:
+         ${GitHubActionsDeployRole.Arn}
+
+      3. The workflow will use OIDC authentication - no access keys needed!

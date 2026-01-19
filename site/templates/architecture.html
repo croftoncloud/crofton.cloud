@@ -1,0 +1,232 @@
+{% extends "base.html" %}
+
+{% block title %}Architecture{% endblock %}
+
+{% block content %}
+<section class="page-header">
+    <div class="container">
+        <h1>Architecture</h1>
+        <p>AWS infrastructure-as-code with security best practices</p>
+    </div>
+</section>
+
+<section class="architecture-overview">
+    <div class="container">
+        <h2>System Architecture</h2>
+        <div class="architecture-diagram">
+            <pre class="diagram">
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              User Request                                    │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                             Route 53 (DNS)                                   │
+│                    Hosted Zone: crofton.cloud                                │
+│                    A/AAAA Records → CloudFront                               │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         CloudFront Distribution                              │
+│  ┌────────────────────────────────────────────────────────────────────────┐ │
+│  │  • TLS 1.2+ enforcement (TLSv1.2_2021 policy)                          │ │
+│  │  • Custom SSL certificate via ACM                                       │ │
+│  │  • IPv6 enabled                                                         │ │
+│  │  • Origin Access Control for S3                                         │ │
+│  │  • Access logging to dedicated S3 bucket                                │ │
+│  └────────────────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────────────┘
+                    │                                   │
+                    ▼                                   ▼
+┌──────────────────────────────────┐   ┌──────────────────────────────────────┐
+│         S3 (Website)             │   │           API Gateway                 │
+│  ┌─────────────────────────────┐ │   │  ┌──────────────────────────────────┐│
+│  │ • KMS encryption (SSE-KMS)  │ │   │  │ • HTTP API                       ││
+│  │ • Versioning enabled        │ │   │  │ • CORS configured                ││
+│  │ • Public access blocked     │ │   │  │ • CloudWatch access logging      ││
+│  │ • Access logging enabled    │ │   │  └──────────────────────────────────┘│
+│  │ • Lifecycle policies        │ │   └──────────────────────────────────────┘
+│  └─────────────────────────────┘ │                     │
+└──────────────────────────────────┘                     ▼
+                                       ┌──────────────────────────────────────┐
+                                       │           Lambda Function             │
+                                       │  ┌──────────────────────────────────┐│
+                                       │  │ • Python 3.12 runtime            ││
+                                       │  │ • KMS-encrypted env vars         ││
+                                       │  │ • Reserved concurrency limit     ││
+                                       │  │ • CloudWatch logs (KMS)          ││
+                                       │  └──────────────────────────────────┘│
+                                       └──────────────────────────────────────┘
+                                                         │
+                                                         ▼
+                                       ┌──────────────────────────────────────┐
+                                       │                SES                    │
+                                       │        Email Delivery Service         │
+                                       └──────────────────────────────────────┘
+            </pre>
+        </div>
+    </div>
+</section>
+
+<section class="architecture-components">
+    <div class="container">
+        <h2>Infrastructure Components</h2>
+
+        <div class="component-grid">
+            <article class="component-card">
+                <h3>Static Website Hosting</h3>
+                <p class="component-stack">CloudFormation: cfn-website-framework.yaml</p>
+                <ul class="component-features">
+                    <li>S3 bucket with KMS server-side encryption</li>
+                    <li>CloudFront distribution with custom SSL</li>
+                    <li>Route 53 DNS with apex and www records</li>
+                    <li>Dedicated logging buckets for S3 and CloudFront</li>
+                    <li>SQS queue for S3 event notifications</li>
+                </ul>
+            </article>
+
+            <article class="component-card">
+                <h3>Contact Form Backend</h3>
+                <p class="component-stack">CloudFormation: cfn-contact-form.yaml</p>
+                <ul class="component-features">
+                    <li>Lambda function with Python 3.12</li>
+                    <li>API Gateway HTTP API with CORS</li>
+                    <li>KMS key for env vars and logs</li>
+                    <li>SES integration for email delivery</li>
+                    <li>Reserved concurrency for cost control</li>
+                </ul>
+            </article>
+
+            <article class="component-card">
+                <h3>CI/CD Pipeline</h3>
+                <p class="component-stack">GitHub Actions + OIDC</p>
+                <ul class="component-features">
+                    <li>OIDC authentication (no stored credentials)</li>
+                    <li>Automated linting with cfn-lint and cfn-nag</li>
+                    <li>Security scanning with checkov</li>
+                    <li>Automatic deployment on main branch</li>
+                    <li>CloudFront cache invalidation</li>
+                </ul>
+            </article>
+
+            <article class="component-card">
+                <h3>Static Site Generator</h3>
+                <p class="component-stack">Python + Jinja2</p>
+                <ul class="component-features">
+                    <li>YAML-based content management</li>
+                    <li>Jinja2 templating engine</li>
+                    <li>Responsive HTML/CSS output</li>
+                    <li>Automated generation in CI/CD</li>
+                    <li>API endpoint injection at build time</li>
+                </ul>
+            </article>
+        </div>
+    </div>
+</section>
+
+<section class="security-controls">
+    <div class="container">
+        <h2>Security Controls</h2>
+        <p class="section-intro">This infrastructure implements security best practices aligned with NIST 800-53 control families.</p>
+
+        <div class="controls-grid">
+            <article class="control-card">
+                <h3>Access Control (AC)</h3>
+                <ul>
+                    <li>S3 public access blocking</li>
+                    <li>CloudFront Origin Access Control</li>
+                    <li>IAM roles with least privilege</li>
+                    <li>OIDC federation for CI/CD</li>
+                </ul>
+            </article>
+
+            <article class="control-card">
+                <h3>Audit and Accountability (AU)</h3>
+                <ul>
+                    <li>S3 access logging</li>
+                    <li>CloudFront access logs</li>
+                    <li>API Gateway access logging</li>
+                    <li>CloudWatch Logs for Lambda</li>
+                </ul>
+            </article>
+
+            <article class="control-card">
+                <h3>System and Communications Protection (SC)</h3>
+                <ul>
+                    <li>TLS 1.2+ enforcement</li>
+                    <li>KMS encryption at rest</li>
+                    <li>HTTPS-only access</li>
+                    <li>Custom security headers</li>
+                </ul>
+            </article>
+
+            <article class="control-card">
+                <h3>Configuration Management (CM)</h3>
+                <ul>
+                    <li>Infrastructure as Code</li>
+                    <li>Version-controlled templates</li>
+                    <li>Pre-commit validation hooks</li>
+                    <li>Automated security scanning</li>
+                </ul>
+            </article>
+        </div>
+    </div>
+</section>
+
+<section class="deployment-workflow">
+    <div class="container">
+        <h2>Deployment Workflow</h2>
+
+        <div class="workflow-steps">
+            <div class="workflow-step">
+                <div class="step-number">1</div>
+                <div class="step-content">
+                    <h4>Code Push</h4>
+                    <p>Developer pushes code to GitHub repository</p>
+                </div>
+            </div>
+            <div class="workflow-arrow">→</div>
+            <div class="workflow-step">
+                <div class="step-number">2</div>
+                <div class="step-content">
+                    <h4>Lint & Scan</h4>
+                    <p>cfn-lint, cfn-nag, pylint, and security scanning</p>
+                </div>
+            </div>
+            <div class="workflow-arrow">→</div>
+            <div class="workflow-step">
+                <div class="step-number">3</div>
+                <div class="step-content">
+                    <h4>OIDC Auth</h4>
+                    <p>GitHub Actions assumes AWS IAM role via OIDC</p>
+                </div>
+            </div>
+            <div class="workflow-arrow">→</div>
+            <div class="workflow-step">
+                <div class="step-number">4</div>
+                <div class="step-content">
+                    <h4>Deploy</h4>
+                    <p>CloudFormation update and S3 sync</p>
+                </div>
+            </div>
+            <div class="workflow-arrow">→</div>
+            <div class="workflow-step">
+                <div class="step-number">5</div>
+                <div class="step-content">
+                    <h4>Invalidate</h4>
+                    <p>CloudFront cache invalidation</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="source-code">
+    <div class="container">
+        <h2>Source Code</h2>
+        <p>This project is open source. View the complete infrastructure code and templates on GitHub.</p>
+        <a href="https://github.com/croftoncloud/crofton.cloud" target="_blank" rel="noopener" class="btn btn-primary">View on GitHub</a>
+    </div>
+</section>
+{% endblock %}

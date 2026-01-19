@@ -1,0 +1,448 @@
+name: Deploy to AWS
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
+    inputs:
+      deploy_infrastructure:
+        description: 'Deploy CloudFormation infrastructure'
+        required: false
+        default: 'true'
+        type: boolean
+      deploy_content:
+        description: 'Deploy website content to S3'
+        required: false
+        default: 'true'
+        type: boolean
+      invalidate_cache:
+        description: 'Invalidate CloudFront cache'
+        required: false
+        default: 'true'
+        type: boolean
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+env:
+  AWS_REGION: us-east-1
+  PROJECT_PREFIX: cc
+  DOMAIN_NAME: crofton.cloud
+  STACK_NAME: cc-website-framework
+  CONTACT_FORM_STACK_NAME: cc-contact-form
+  RECIPIENT_EMAIL: contact@crofton.cloud
+  SENDER_EMAIL: noreply@crofton.cloud
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install cfn-lint
+        run: pip install cfn-lint
+
+      - name: Run cfn-lint
+        run: cfn-lint cloudformation/*.yaml
+
+      - name: Install cfn-nag
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ruby ruby-dev
+          sudo gem install cfn-nag
+
+      - name: Run cfn-nag
+        run: cfn_nag_scan --input-path cloudformation/
+        continue-on-error: true
+
+  validate:
+    name: Validate CloudFormation
+    runs-on: ubuntu-latest
+    needs: lint
+    # Only run AWS validation on push (OIDC tokens differ for PRs)
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-crofton.cloud
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Validate CloudFormation Templates
+        run: |
+          for template in cloudformation/*.yaml; do
+            echo "Validating $template..."
+            aws cloudformation validate-template --template-body file://$template
+          done
+
+  plan:
+    name: Plan Deployment
+    runs-on: ubuntu-latest
+    needs: [lint, validate]
+    # Only run on push events (requires AWS credentials)
+    if: always() && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (needs.validate.result == 'success' || needs.validate.result == 'skipped')
+    outputs:
+      stack_exists: ${{ steps.check-stack.outputs.exists }}
+      distribution_id: ${{ steps.get-distribution.outputs.distribution_id }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-crofton.cloud
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Check if stack exists
+        id: check-stack
+        run: |
+          if aws cloudformation describe-stacks --stack-name ${{ env.STACK_NAME }} 2>/dev/null; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "Stack ${{ env.STACK_NAME }} exists"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "Stack ${{ env.STACK_NAME }} does not exist"
+          fi
+
+      - name: Get CloudFront Distribution ID
+        id: get-distribution
+        if: steps.check-stack.outputs.exists == 'true'
+        run: |
+          DISTRIBUTION_ID=$(aws cloudformation describe-stacks \
+            --stack-name ${{ env.STACK_NAME }} \
+            --query "Stacks[0].Outputs[?OutputKey=='CloudFrontDistributionId'].OutputValue" \
+            --output text 2>/dev/null || echo "")
+          echo "distribution_id=$DISTRIBUTION_ID" >> $GITHUB_OUTPUT
+          echo "CloudFront Distribution ID: $DISTRIBUTION_ID"
+
+      - name: Create change set (existing stack)
+        if: steps.check-stack.outputs.exists == 'true'
+        run: |
+          # Get current parameters
+          HOSTED_ZONE_ID=$(aws route53 list-hosted-zones-by-name \
+            --dns-name ${{ env.DOMAIN_NAME }} \
+            --query "HostedZones[0].Id" \
+            --output text | sed 's|/hostedzone/||')
+
+          ACM_CERT_ARN=$(aws acm list-certificates \
+            --query "CertificateSummaryList[?DomainName=='${{ env.DOMAIN_NAME }}'].CertificateArn" \
+            --output text | head -1)
+
+          echo "Creating change set for stack update..."
+          aws cloudformation create-change-set \
+            --stack-name ${{ env.STACK_NAME }} \
+            --template-body file://cloudformation/cfn-website-framework.yaml \
+            --change-set-name deploy-${{ github.sha }} \
+            --parameters \
+              ParameterKey=ProjectPrefix,ParameterValue=${{ env.PROJECT_PREFIX }} \
+              ParameterKey=DomainName,ParameterValue=${{ env.DOMAIN_NAME }} \
+              ParameterKey=HostedZoneId,ParameterValue=$HOSTED_ZONE_ID \
+              ParameterKey=ACMCertificateArn,ParameterValue=$ACM_CERT_ARN \
+            --capabilities CAPABILITY_NAMED_IAM || true
+
+          echo "Waiting for change set to be created..."
+          aws cloudformation wait change-set-create-complete \
+            --stack-name ${{ env.STACK_NAME }} \
+            --change-set-name deploy-${{ github.sha }} 2>/dev/null || true
+
+          echo "### CloudFormation Change Set" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          aws cloudformation describe-change-set \
+            --stack-name ${{ env.STACK_NAME }} \
+            --change-set-name deploy-${{ github.sha }} \
+            --query "Changes[].{Action:ResourceChange.Action,Resource:ResourceChange.LogicalResourceId,Type:ResourceChange.ResourceType}" \
+            --output table >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "No changes detected" >> $GITHUB_STEP_SUMMARY
+
+      - name: Post plan to PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const stackExists = '${{ steps.check-stack.outputs.exists }}' === 'true';
+            const output = `### AWS Deployment Plan
+
+            **Stack:** \`${{ env.STACK_NAME }}\`
+            **Region:** \`${{ env.AWS_REGION }}\`
+            **Stack Exists:** ${stackExists ? '✅ Yes' : '❌ No (will be created)'}
+            **CloudFront Distribution:** \`${{ steps.get-distribution.outputs.distribution_id || 'N/A' }}\`
+
+            ${stackExists ? 'A change set has been created. Review the workflow summary for details.' : 'The stack will be created on merge to main.'}
+
+            *Triggered by: @${{ github.actor }}*`;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            });
+
+  deploy-infrastructure:
+    name: Deploy Infrastructure
+    runs-on: ubuntu-latest
+    needs: plan
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-crofton.cloud
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Deploy CloudFormation
+        working-directory: cloudformation
+        run: |
+          python3 deploy.py \
+            --region ${{ env.AWS_REGION }} \
+            --domain ${{ env.DOMAIN_NAME }} \
+            --prefix ${{ env.PROJECT_PREFIX }}
+        env:
+          AWS_DEFAULT_REGION: ${{ env.AWS_REGION }}
+
+      - name: Get stack outputs
+        id: stack-outputs
+        run: |
+          DISTRIBUTION_ID=$(aws cloudformation describe-stacks \
+            --stack-name ${{ env.STACK_NAME }} \
+            --query "Stacks[0].Outputs[?OutputKey=='CloudFrontDistributionId'].OutputValue" \
+            --output text)
+          echo "distribution_id=$DISTRIBUTION_ID" >> $GITHUB_OUTPUT
+
+          BUCKET_NAME=$(aws cloudformation describe-stacks \
+            --stack-name ${{ env.STACK_NAME }} \
+            --query "Stacks[0].Outputs[?OutputKey=='WebsiteBucketName'].OutputValue" \
+            --output text)
+          echo "bucket_name=$BUCKET_NAME" >> $GITHUB_OUTPUT
+
+    outputs:
+      distribution_id: ${{ steps.stack-outputs.outputs.distribution_id }}
+      bucket_name: ${{ steps.stack-outputs.outputs.bucket_name }}
+
+  deploy-content:
+    name: Deploy Content
+    runs-on: ubuntu-latest
+    needs: [deploy-infrastructure, deploy-contact-form]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Generate static site
+        working-directory: site
+        run: |
+          python generate.py --output-dir ../dist --api-endpoint "{{API_ENDPOINT}}"
+          echo "Generated files:"
+          ls -la ../dist/
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-crofton.cloud
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Prepare contact page with API endpoint
+        run: |
+          API_ENDPOINT="${{ needs.deploy-contact-form.outputs.api_endpoint }}"
+          sed -i "s|{{API_ENDPOINT}}|${API_ENDPOINT}|g" cloudformation/contact.html
+          echo "Configured contact form with API: $API_ENDPOINT"
+
+      - name: Sync content to S3
+        run: |
+          # Sync generated site to S3 (non-HTML files with long cache)
+          aws s3 sync dist/ s3://${{ env.DOMAIN_NAME }}/ \
+            --delete \
+            --exclude "*.html" \
+            --cache-control "max-age=31536000"
+
+          # Upload HTML with shorter cache
+          for html_file in dist/*.html; do
+            filename=$(basename "$html_file")
+            aws s3 cp "$html_file" "s3://${{ env.DOMAIN_NAME }}/$filename" \
+              --content-type "text/html" \
+              --cache-control "max-age=3600"
+          done
+
+          echo "### Content Deployed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Files uploaded to s3://${{ env.DOMAIN_NAME }}/" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Generated pages:" >> $GITHUB_STEP_SUMMARY
+          ls -1 dist/*.html | xargs -I {} basename {} >> $GITHUB_STEP_SUMMARY
+
+  invalidate-cache:
+    name: Invalidate CloudFront Cache
+    runs-on: ubuntu-latest
+    needs: [deploy-infrastructure, deploy-content]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-crofton.cloud
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Invalidate CloudFront
+        run: |
+          DISTRIBUTION_ID="${{ needs.deploy-infrastructure.outputs.distribution_id }}"
+
+          if [ -n "$DISTRIBUTION_ID" ]; then
+            echo "Invalidating CloudFront distribution: $DISTRIBUTION_ID"
+            INVALIDATION_ID=$(aws cloudfront create-invalidation \
+              --distribution-id $DISTRIBUTION_ID \
+              --paths "/*" \
+              --query 'Invalidation.Id' \
+              --output text)
+
+            echo "Invalidation created: $INVALIDATION_ID"
+            echo "### CloudFront Cache Invalidated" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Invalidation ID: \`$INVALIDATION_ID\`" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "No CloudFront distribution ID found, skipping invalidation"
+          fi
+
+  deploy-contact-form:
+    name: Deploy Contact Form
+    runs-on: ubuntu-latest
+    needs: deploy-infrastructure
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-crofton.cloud
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deploy Contact Form Stack
+        run: |
+          # Check if stack exists
+          if aws cloudformation describe-stacks --stack-name ${{ env.CONTACT_FORM_STACK_NAME }} 2>/dev/null; then
+            echo "Updating contact form stack..."
+            aws cloudformation update-stack \
+              --stack-name ${{ env.CONTACT_FORM_STACK_NAME }} \
+              --template-body file://cloudformation/cfn-contact-form.yaml \
+              --parameters \
+                ParameterKey=ProjectPrefix,ParameterValue=${{ env.PROJECT_PREFIX }} \
+                ParameterKey=DomainName,ParameterValue=${{ env.DOMAIN_NAME }} \
+                ParameterKey=RecipientEmail,ParameterValue=${{ env.RECIPIENT_EMAIL }} \
+                ParameterKey=SenderEmail,ParameterValue=${{ env.SENDER_EMAIL }} \
+              --capabilities CAPABILITY_NAMED_IAM \
+              2>&1 || echo "No updates to perform"
+
+            aws cloudformation wait stack-update-complete \
+              --stack-name ${{ env.CONTACT_FORM_STACK_NAME }} 2>/dev/null || true
+          else
+            echo "Creating contact form stack..."
+            aws cloudformation create-stack \
+              --stack-name ${{ env.CONTACT_FORM_STACK_NAME }} \
+              --template-body file://cloudformation/cfn-contact-form.yaml \
+              --parameters \
+                ParameterKey=ProjectPrefix,ParameterValue=${{ env.PROJECT_PREFIX }} \
+                ParameterKey=DomainName,ParameterValue=${{ env.DOMAIN_NAME }} \
+                ParameterKey=RecipientEmail,ParameterValue=${{ env.RECIPIENT_EMAIL }} \
+                ParameterKey=SenderEmail,ParameterValue=${{ env.SENDER_EMAIL }} \
+              --capabilities CAPABILITY_NAMED_IAM
+
+            aws cloudformation wait stack-create-complete \
+              --stack-name ${{ env.CONTACT_FORM_STACK_NAME }}
+          fi
+
+      - name: Package Lambda Code
+        run: |
+          cd lambda
+          zip -r contact_form.zip contact_form.py
+          ls -la contact_form.zip
+
+      - name: Update Lambda Function Code
+        run: |
+          FUNCTION_NAME=$(aws cloudformation describe-stacks \
+            --stack-name ${{ env.CONTACT_FORM_STACK_NAME }} \
+            --query "Stacks[0].Outputs[?OutputKey=='LambdaFunctionName'].OutputValue" \
+            --output text)
+
+          echo "Updating Lambda function: $FUNCTION_NAME"
+          aws lambda update-function-code \
+            --function-name $FUNCTION_NAME \
+            --zip-file fileb://lambda/contact_form.zip
+
+      - name: Get API Endpoint
+        id: api-endpoint
+        run: |
+          API_ENDPOINT=$(aws cloudformation describe-stacks \
+            --stack-name ${{ env.CONTACT_FORM_STACK_NAME }} \
+            --query "Stacks[0].Outputs[?OutputKey=='ApiEndpoint'].OutputValue" \
+            --output text)
+          echo "api_endpoint=$API_ENDPOINT" >> $GITHUB_OUTPUT
+          echo "Contact Form API: $API_ENDPOINT"
+
+    outputs:
+      api_endpoint: ${{ steps.api-endpoint.outputs.api_endpoint }}
+
+  deployment-summary:
+    name: Deployment Summary
+    runs-on: ubuntu-latest
+    needs: [deploy-infrastructure, deploy-content, invalidate-cache, deploy-contact-form]
+    if: always() && github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Create summary
+        run: |
+          echo "## Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Infrastructure | ${{ needs.deploy-infrastructure.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Content | ${{ needs.deploy-content.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Cache Invalidation | ${{ needs.invalidate-cache.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Contact Form | ${{ needs.deploy-contact-form.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Website URL:** https://${{ env.DOMAIN_NAME }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Contact API:** ${{ needs.deploy-contact-form.outputs.api_endpoint }}" >> $GITHUB_STEP_SUMMARY

@@ -1,73 +1,130 @@
 # crofton.cloud
-crofton.cloud demo infrastructure
 
-This repository will host demo content for the services offered by crofton.cloud.
+Portfolio website demonstrating AWS infrastructure-as-code with NIST 800-53 compliance patterns.
 
-Initial examples to include:
+## Features
 
-- CloudFormation: public S3 website setup with cloudfront, ACM, and all NIST 800-53 controls satisfied.
-- DNS Review including SPK/DKIM/MX
-- Documentation Samples
+- **Static Site Generator** - Jinja2-based generator using structured YAML data
+- **Serverless Contact Form** - Lambda + API Gateway + SES with KMS encryption
+- **Infrastructure as Code** - CloudFormation templates with security best practices
+- **CI/CD Pipeline** - GitHub Actions with OIDC authentication (no stored credentials)
+- **Security Scanning** - Automated SAST with checkov, cfn-nag, and portfolio-code-scanner
 
-## Created Assets
-
-*cfn-website-framework.yaml*
-
-Parameters:
-    - ACMCertificateArn
-    - BucketLogsLifeCycle
-    - BucketTransitionLifeCycle
-    - DomainName
-    - HostedZoneId
-    - ProjectPrefix
-
-Resources:
-    - KMS Key
-    - S3 Bucket for Hosting
-    - S3 Bucket for S3 Access Logging
-    - S3 Bucket for CloudFront Access Logging
-    - SQS Queue for Event Notifications
-    - CloudFront Distribution to serve content
-    - Route 53 Records to map domain to CloudFront Distribution
-
-*deploy.py*
-
-Usage: `usage: deploy.py [-h] --account ACCOUNT [--region REGION] --domain DOMAIN --prefix PREFIX [--bucketlogslifecycle BUCKETLOGSLIFECYCLE] [--buckettransitionlifecycle BUCKETTRANSITIONLIFECYCLE] [--validate]`
-
-Example usage:
+## Architecture
 
 ```
-python3 ./deploy.py --account portfolio --region us-east-1 --domain crofton.cloud --prefix cc
-Certificate requested with ARN: arn:aws:acm:us-east-1:918573727633:certificate/c4cafdfc-8b21-4ab4-bc50-f88c52a5cf71
-Validation record created for _b40c66fde266885c2a569ccfe97e0859.crofton.cloud. in Route 53.
-Validation record created for _0a86bf8ffd997e1f651fd50e609b1ee7.www.crofton.cloud. in Route 53.
-Certificate issued successfully.
-Checking if stack cc-website-framework exists...
-Stack cc-website-framework exists. Updating...
-Stack cc-website-framework updated successfully.
-Uploading ./index.html to bucket crofton.cloud...
-Uploaded ./index.html to bucket crofton.cloud as index.html
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│   Route 53  │────▶│  CloudFront │────▶│     S3      │
+│   (DNS)     │     │   (CDN)     │     │  (Website)  │
+└─────────────┘     └─────────────┘     └─────────────┘
+                           │
+                           ▼
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│  API Gateway│────▶│   Lambda    │────▶│     SES     │
+│  (HTTP API) │     │  (Contact)  │     │   (Email)   │
+└─────────────┘     └─────────────┘     └─────────────┘
 ```
 
-This script collects information from the AWS tenant to provide input for CloudFormation. It also monitors the deployment process to assist with errors.
+## Quick Start
 
-*index.html*
+### Prerequisites
 
-This is a basic HTML page used to validate successful deployment of all components. This page can be updated to have the actual site content.
+- AWS CLI configured with a named profile
+- Route 53 hosted zone for your domain
+- Python 3.12+, Ruby (for cfn-nag)
 
-## Repository Assets
+### Installation
+
+```bash
+# Install Python dependencies
+pip install -r requirements.txt
+
+# Install linting tools
+pip install cfn-lint
+gem install cfn-nag
+
+# Install pre-commit hooks
+pre-commit install
+```
+
+### Generate Site Locally
+
+```bash
+cd site
+python3 generate.py --output-dir ../dist
+```
+
+### Deploy Infrastructure
+
+```bash
+cd cloudformation
+python3 deploy.py --account <AWS_PROFILE> --domain <DOMAIN> --prefix <PREFIX>
+```
+
+## Repository Structure
 
 ```
-.
-├── cloudformation
-│   ├── cfn-website-framework.yaml
-│   ├── deploy.py
-│   ├── index.html
-│   └── resume.html
-├── .github
-│   └── workflows
-│       ├── lint_on_pull_request.yaml
-│       └── lint_on_push.yaml
-├── .gitignore
-└── README.md
+├── .github/workflows/     # CI/CD pipelines
+├── cloudformation/        # AWS CloudFormation templates
+│   ├── cfn-website-framework.yaml    # S3, CloudFront, Route53
+│   ├── cfn-contact-form.yaml         # Lambda, API Gateway, KMS
+│   └── github-oidc-deploy-role.yaml  # GitHub Actions IAM role
+├── data/resume.yaml       # Structured content data
+├── lambda/                # Lambda function code
+├── site/                  # Static site generator
+│   ├── generate.py        # Generator script
+│   ├── templates/         # Jinja2 templates
+│   └── static/            # CSS assets
+└── dist/                  # Generated output (gitignored)
 ```
+
+## CloudFormation Templates
+
+### cfn-website-framework.yaml
+
+| Resource | Description |
+|----------|-------------|
+| S3 Bucket | Website hosting with KMS encryption |
+| S3 Logging Buckets | Access logs for S3 and CloudFront |
+| CloudFront Distribution | CDN with custom SSL certificate |
+| Route 53 Records | DNS for apex and www subdomain |
+| SQS Queue | Event notifications with DLQ |
+| KMS Key | Encryption for S3 objects |
+
+### cfn-contact-form.yaml
+
+| Resource | Description |
+|----------|-------------|
+| Lambda Function | Contact form handler |
+| API Gateway HTTP API | REST endpoint with CORS |
+| KMS Key | Encryption for env vars and logs |
+| CloudWatch Log Groups | Execution and access logs |
+| IAM Role | Lambda execution with SES permissions |
+
+### github-oidc-deploy-role.yaml
+
+| Resource | Description |
+|----------|-------------|
+| IAM Role | OIDC trust for GitHub Actions |
+| IAM Policies | Scoped permissions for AWS services |
+
+## CI/CD Workflows
+
+| Workflow | Trigger | Actions |
+|----------|---------|---------|
+| Lint | Push to any branch | cfn-lint, cfn-nag, pylint |
+| SAST | Push to main/develop | Security scanning with SARIF upload |
+| Deploy | Push to main | Generate site, deploy CFN, sync S3, invalidate cache |
+
+## Security Features
+
+- KMS encryption for S3, Lambda env vars, CloudWatch Logs
+- Public access blocking on all S3 buckets
+- SSL/TLS enforcement (HTTPS only)
+- OIDC authentication (no long-lived credentials)
+- Security scanning in CI pipeline
+- Pre-commit hooks for local validation
+
+## License
+
+MIT

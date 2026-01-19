@@ -10,6 +10,7 @@ Usage:
 Example:
     python deploy.py --account myprofile --region us-east-1 --domain example.com --prefix myproject
 """
+
 import time
 import argparse
 import logging
@@ -18,6 +19,7 @@ import boto3
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
 
 def validate_template(client, template_body):
     """
@@ -34,6 +36,7 @@ def validate_template(client, template_body):
     response = client.validate_template(TemplateBody=template_body)
     logger.info("Template validation response: %s", response)
     return response
+
 
 def deploy_stack(client, stack_name, template_body, parameters):
     """
@@ -56,7 +59,7 @@ def deploy_stack(client, stack_name, template_body, parameters):
                 Parameters=parameters,
                 Capabilities=["CAPABILITY_NAMED_IAM", "CAPABILITY_AUTO_EXPAND"],
             )
-            waiter = client.get_waiter('stack_update_complete')
+            waiter = client.get_waiter("stack_update_complete")
             waiter.wait(StackName=stack_name)
             logger.info("Stack %s updated successfully.", stack_name)
         except client.exceptions.ClientError as e:
@@ -73,11 +76,12 @@ def deploy_stack(client, stack_name, template_body, parameters):
                 Parameters=parameters,
                 Capabilities=["CAPABILITY_NAMED_IAM", "CAPABILITY_AUTO_EXPAND"],
             )
-            waiter = client.get_waiter('stack_create_complete')
+            waiter = client.get_waiter("stack_create_complete")
             waiter.wait(StackName=stack_name)
             logger.info("Stack %s created successfully.", stack_name)
         else:
             raise
+
 
 def request_acm_certificate(domain, zone_id, acm_client, route53_client):
     """
@@ -122,15 +126,15 @@ def request_acm_certificate(domain, zone_id, acm_client, route53_client):
                             "Name": validation_record["Name"],
                             "Type": validation_record["Type"],
                             "TTL": 300,
-                            "ResourceRecords": [
-                                {"Value": validation_record["Value"]}
-                            ],
+                            "ResourceRecords": [{"Value": validation_record["Value"]}],
                         },
                     }
                 ]
             },
         )
-        logger.info("Validation record created for %s in Route 53.", validation_record['Name'])
+        logger.info(
+            "Validation record created for %s in Route 53.", validation_record["Name"]
+        )
 
     # Wait for certificate validation
     while True:
@@ -143,6 +147,7 @@ def request_acm_certificate(domain, zone_id, acm_client, route53_client):
         time.sleep(15)
 
     return cert_arn
+
 
 def get_kms_key(client, alias_name):
     """
@@ -162,6 +167,7 @@ def get_kms_key(client, alias_name):
             return alias["TargetKeyId"]
     return None
 
+
 def upload_index_html(s3_client, bucket_name, file_path):
     """
     Upload index.html to the specified S3 bucket.
@@ -172,42 +178,70 @@ def upload_index_html(s3_client, bucket_name, file_path):
         file_path: Path to the index.html file.
     """
     logger.info("Uploading %s to bucket %s as %s...", file_path, bucket_name, file_path)
-    s3_client.upload_file(file_path, bucket_name, file_path, ExtraArgs={"ContentType": "text/html"})
+    s3_client.upload_file(
+        file_path, bucket_name, file_path, ExtraArgs={"ContentType": "text/html"}
+    )
     logger.info("Uploaded %s to bucket %s as %s.", file_path, bucket_name, file_path)
 
+
 def main():
-    '''
+    """
     Main function to deploy the CloudFormation stack for the website framework.
-    '''
-    parser = argparse.ArgumentParser(description="Deploy CloudFormation stack for website framework.")
+    """
+    parser = argparse.ArgumentParser(
+        description="Deploy CloudFormation stack for website framework."
+    )
     parser.add_argument("--account", required=True, help="AWS named profile to use.")
-    parser.add_argument("--region", default="us-east-1", help="AWS region to deploy to. Default is us-east-1.")
-    parser.add_argument("--domain", required=True, help="The domain name to use for the website.")
-    parser.add_argument("--prefix", required=True, help="The project prefix for resource naming.")
-    parser.add_argument("--bucketlogslifecycle", default="365", help="Number of days to retain bucket logs. Default is 365.")
-    parser.add_argument("--buckettransitionlifecycle", default="30", help="Number of days to transition logs. Default is 30.")
-    parser.add_argument("--validate", action="store_true", help="Validate the CloudFormation template instead of deploying.")
+    parser.add_argument(
+        "--region",
+        default="us-east-1",
+        help="AWS region to deploy to. Default is us-east-1.",
+    )
+    parser.add_argument(
+        "--domain", required=True, help="The domain name to use for the website."
+    )
+    parser.add_argument(
+        "--prefix", required=True, help="The project prefix for resource naming."
+    )
+    parser.add_argument(
+        "--bucketlogslifecycle",
+        default="365",
+        help="Number of days to retain bucket logs. Default is 365.",
+    )
+    parser.add_argument(
+        "--buckettransitionlifecycle",
+        default="30",
+        help="Number of days to transition logs. Default is 30.",
+    )
+    parser.add_argument(
+        "--validate",
+        action="store_true",
+        help="Validate the CloudFormation template instead of deploying.",
+    )
 
     args = parser.parse_args()
 
     # Configure AWS session
     boto3.setup_default_session(profile_name=args.account, region_name=args.region)
-    cfn_client = boto3.client('cloudformation')
-    route53_client = boto3.client('route53')
-    acm_client = boto3.client('acm')
-    s3_client = boto3.client('s3')
-
+    cfn_client = boto3.client("cloudformation")
+    route53_client = boto3.client("route53")
+    acm_client = boto3.client("acm")
+    s3_client = boto3.client("s3")
 
     # Get hosted zone ID
     domain = args.domain
-    zone_id_response = route53_client.list_hosted_zones_by_name(DNSName=domain, MaxItems="1")
+    zone_id_response = route53_client.list_hosted_zones_by_name(
+        DNSName=domain, MaxItems="1"
+    )
     hosted_zones = zone_id_response.get("HostedZones", [])
-    if not hosted_zones or not domain in hosted_zones[0]["Name"]:
+    if not hosted_zones or domain not in hosted_zones[0]["Name"]:
         raise ValueError(f"No hosted zone found for domain {domain}")
     hosted_zone_id = hosted_zones[0]["Id"].split("/")[-1]
 
     # Request ACM certificate
-    acm_certificate_arn = request_acm_certificate(domain, hosted_zone_id, acm_client, route53_client)
+    acm_certificate_arn = request_acm_certificate(
+        domain, hosted_zone_id, acm_client, route53_client
+    )
 
     # Read the CloudFormation template
     with open("cfn-website-framework.yaml", "r", encoding="utf-8") as file:
@@ -225,11 +259,20 @@ def main():
         stack_name=stack_name,
         template_body=template_body,
         parameters=[
-            {"ParameterKey": "ACMCertificateArn", "ParameterValue": acm_certificate_arn},
+            {
+                "ParameterKey": "ACMCertificateArn",
+                "ParameterValue": acm_certificate_arn,
+            },
             {"ParameterKey": "DomainName", "ParameterValue": args.domain},
             {"ParameterKey": "ProjectPrefix", "ParameterValue": args.prefix},
-            {"ParameterKey": "BucketLogsLifeCycle", "ParameterValue": args.bucketlogslifecycle},
-            {"ParameterKey": "BucketTransitionLifeCycle", "ParameterValue": args.buckettransitionlifecycle},
+            {
+                "ParameterKey": "BucketLogsLifeCycle",
+                "ParameterValue": args.bucketlogslifecycle,
+            },
+            {
+                "ParameterKey": "BucketTransitionLifeCycle",
+                "ParameterValue": args.buckettransitionlifecycle,
+            },
             {"ParameterKey": "HostedZoneId", "ParameterValue": hosted_zone_id},
         ],
     )
@@ -237,6 +280,7 @@ def main():
     # Upload html to S3
     upload_index_html(s3_client, args.domain, "index.html")
     upload_index_html(s3_client, args.domain, "resume.html")
+
 
 if __name__ == "__main__":
     main()
