@@ -86,9 +86,43 @@ def deploy_stack(client, stack_name, template_body, parameters):
             raise
 
 
+def get_existing_certificate(domain, acm_client):
+    """
+    Check for an existing valid ACM certificate for the domain.
+
+    Args:
+        domain: The domain name.
+        acm_client: Boto3 ACM client.
+
+    Returns:
+        str: ACM Certificate ARN if found and valid, None otherwise.
+    """
+    response = acm_client.list_certificates(
+        CertificateStatuses=["ISSUED", "PENDING_VALIDATION"]
+    )
+
+    for cert in response.get("CertificateSummaryList", []):
+        if cert["DomainName"] == domain:
+            cert_arn = cert["CertificateArn"]
+            # Verify the certificate includes www subdomain
+            cert_details = acm_client.describe_certificate(CertificateArn=cert_arn)
+            sans = cert_details["Certificate"].get("SubjectAlternativeNames", [])
+            if f"www.{domain}" in sans:
+                status = cert_details["Certificate"]["Status"]
+                if status == "ISSUED":
+                    logger.info("Found existing valid certificate: %s", cert_arn)
+                    return cert_arn
+                logger.info(
+                    "Found existing certificate (status: %s): %s", status, cert_arn
+                )
+                return cert_arn
+    return None
+
+
 def request_acm_certificate(domain, zone_id, acm_client, route53_client):
     """
     Request an ACM certificate for the domain and validate it using Route 53.
+    First checks for an existing valid certificate.
 
     Args:
         domain: The domain name.
@@ -99,18 +133,37 @@ def request_acm_certificate(domain, zone_id, acm_client, route53_client):
     Returns:
         str: ACM Certificate ARN.
     """
-    response = acm_client.request_certificate(
-        DomainName=domain,
-        SubjectAlternativeNames=[f"www.{domain}"],
-        ValidationMethod="DNS",
-    )
-    cert_arn = response["CertificateArn"]
-    logger.info("Certificate requested with ARN: %s", cert_arn)
+    # Check for existing certificate first
+    existing_cert = get_existing_certificate(domain, acm_client)
+    if existing_cert:
+        # If certificate is already issued, return it
+        cert_details = acm_client.describe_certificate(CertificateArn=existing_cert)
+        if cert_details["Certificate"]["Status"] == "ISSUED":
+            return existing_cert
+        # If pending validation, continue with validation process
+        cert_arn = existing_cert
+        logger.info("Using existing certificate pending validation: %s", cert_arn)
+    else:
+        # Request new certificate
+        response = acm_client.request_certificate(
+            DomainName=domain,
+            SubjectAlternativeNames=[f"www.{domain}"],
+            ValidationMethod="DNS",
+        )
+        cert_arn = response["CertificateArn"]
+        logger.info("Certificate requested with ARN: %s", cert_arn)
 
     # Retrieve validation options
     while True:
         cert_details = acm_client.describe_certificate(CertificateArn=cert_arn)
-        options = cert_details["Certificate"]["DomainValidationOptions"]
+        cert_status = cert_details["Certificate"]["Status"]
+
+        # If already issued, no need to validate
+        if cert_status == "ISSUED":
+            logger.info("Certificate already issued.")
+            return cert_arn
+
+        options = cert_details["Certificate"].get("DomainValidationOptions", [])
         if options and "ResourceRecord" in options[0]:
             break
         logger.info("Waiting for validation options to become available...")
