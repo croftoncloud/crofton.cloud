@@ -109,16 +109,17 @@ pre-commit install               # Install git hooks
 
 ## CI/CD
 
-### Branching Strategy
+### Branching Strategy (GitHub Flow)
 
-- `main` - Production deployments
-- `develop` - Integration branch
-- `feature/*` - Feature branches (PR to develop)
+- `main` - Production branch, always deployable
+- `feature/*` - Feature branches (PR to main)
+
+All changes go through pull requests to main. Merging to main triggers deployment.
 
 ### Workflows
 
 - **Push to any branch**: Linting (cfn-lint, cfn-nag, pylint)
-- **Push to main/develop**: SAST scanning with portfolio-code-scanner
+- **PR to main**: SAST scanning, lint comments posted to PR
 - **Push to main**: Full AWS deployment via OIDC
 
 ### Pre-commit Hooks

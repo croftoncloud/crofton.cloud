@@ -414,6 +414,15 @@ Resources:
             Resource:
               - !Sub 'arn:aws:apigateway:${AWS::Region}::/apis'
               - !Sub 'arn:aws:apigateway:${AWS::Region}::/apis/*'
+          - Sid: APIGatewayTagging
+            Effect: Allow
+            Action:
+              - apigateway:POST
+              - apigateway:GET
+              - apigateway:PUT
+              - apigateway:DELETE
+            Resource:
+              - !Sub 'arn:aws:apigateway:${AWS::Region}::/tags/*'
 
   # Policy for CloudWatch Logs (Lambda and API Gateway logging)
   CloudWatchLogsPolicy:
