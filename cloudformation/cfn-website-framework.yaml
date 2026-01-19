@@ -55,13 +55,9 @@ Resources:
 
   OpsQueue:
     Type: 'AWS::SQS::Queue'
-    Metadata:
-      cfn_nag:
-        rules_to_suppress:
-          - id: W48
-            reason: "Ignoring KMS key, uses SSE-SQS"
     Properties:
       QueueName: !Sub '${ProjectPrefix}-${AWS::AccountId}-${AWS::Region}'
+      KmsMasterKeyId: 'alias/aws/sqs'
       MessageRetentionPeriod: 345600
       ReceiveMessageWaitTimeSeconds: 20
       RedrivePolicy:
@@ -81,7 +77,7 @@ Resources:
             Effect: 'Allow'
             Principal:
               Service: 's3.amazonaws.com'
-            Action: 
+            Action:
               - SQS:SendMessage
             Resource: !GetAtt 'OpsQueue.Arn'
             Condition:
@@ -90,7 +86,7 @@ Resources:
           - Sid: 'Allow SQS Notifications'
             Effect: 'Allow'
             Principal:
-              Service: 'sqs.amazonaws.com'  
+              Service: 'sqs.amazonaws.com'
             Action:
               - sqs:SendMessage
             Resource: !GetAtt 'OpsQueue.Arn'
@@ -102,6 +98,10 @@ Resources:
         rules_to_suppress:
           - id: W35
             reason: "Ignoring Access Logging as this is an Access Logging bucket."
+      checkov:
+        skip:
+          - id: CKV_AWS_18
+            comment: This is a logging destination bucket. Enabling access logging would cause circular logging.
     Properties:
       BucketEncryption:
         ServerSideEncryptionConfiguration:
@@ -151,7 +151,7 @@ Resources:
         Statement:
           - Sid: S3ServerAccessLogs
             Effect: Allow
-            Principal: 
+            Principal:
               Service:
                 - logging.s3.amazonaws.com
             Action: s3:PutObject
@@ -173,7 +173,7 @@ Resources:
             Effect: Allow
             Principal:
               AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
-            Action: 
+            Action:
               - s3:GetBucketPolicy
               - s3:PutBucketPolicy
             Resource: !Sub "arn:${AWS::Partition}:s3:::${S3AccessLoggingBucket}"
@@ -189,6 +189,10 @@ Resources:
         rules_to_suppress:
           - id: W35
             reason: "Access logging destination buckets should not have access logging enabled."
+      checkov:
+        skip:
+          - id: CKV_AWS_18
+            comment: This is a logging destination bucket. Enabling access logging would cause circular logging.
     Properties:
       BucketName: !Sub '${ProjectPrefix}-cfaccesslogs-${AWS::AccountId}-${AWS::Region}'
       BucketEncryption:
@@ -369,10 +373,15 @@ Resources:
 
   CloudFrontDistribution:
     Type: AWS::CloudFront::Distribution
-    DependsOn: 
+    DependsOn:
       - CloudFrontLoggingBucketPolicy
       - S3HostingBucketPolicy
       - S3KMSAlias
+    Metadata:
+      checkov:
+        skip:
+          - id: CKV_AWS_68
+            comment: WAF not required for portfolio site. Geo-restriction to US/CA provides sufficient protection for static content.
     Properties:
       DistributionConfig:
         Aliases:

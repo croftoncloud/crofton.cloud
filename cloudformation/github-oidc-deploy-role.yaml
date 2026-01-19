@@ -157,6 +157,10 @@ Resources:
         rules_to_suppress:
           - id: W12
             reason: CloudFront distributions require account-level resource ARNs
+      checkov:
+        skip:
+          - id: CKV_AWS_111
+            comment: CloudFront ARNs are global and unknown until distribution creation. OIDC trust policy restricts role assumption to this repository only.
     Properties:
       PolicyName: CloudFrontManagement
       Roles:
@@ -198,6 +202,10 @@ Resources:
         rules_to_suppress:
           - id: W12
             reason: Route53 hosted zone lookup requires list permission on all zones
+      checkov:
+        skip:
+          - id: CKV_AWS_111
+            comment: Route53 zone IDs discovered at runtime. OIDC trust policy restricts role assumption to this repository only.
     Properties:
       PolicyName: Route53Management
       Roles:
@@ -224,6 +232,10 @@ Resources:
         rules_to_suppress:
           - id: W12
             reason: ACM certificate operations require broad resource access for validation
+      checkov:
+        skip:
+          - id: CKV_AWS_111
+            comment: ACM certificate ARNs unknown until creation. OIDC trust policy restricts role assumption to this repository only.
     Properties:
       PolicyName: ACMManagement
       Roles:
@@ -250,6 +262,12 @@ Resources:
         rules_to_suppress:
           - id: W12
             reason: KMS key creation requires account-level permissions
+      checkov:
+        skip:
+          - id: CKV_AWS_109
+            comment: KMS key creation and policy management required for CloudFormation to create encrypted S3 buckets. OIDC trust restricts to this repo.
+          - id: CKV_AWS_111
+            comment: KMS key ARNs unknown until creation. OIDC trust policy restricts role assumption to this repository only.
     Properties:
       PolicyName: KMSManagement
       Roles:
@@ -280,6 +298,15 @@ Resources:
   # Policy for SES (contact form)
   SESPolicy:
     Type: AWS::IAM::Policy
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W12
+            reason: SES identity ARNs depend on domain verification status
+      checkov:
+        skip:
+          - id: CKV_AWS_111
+            comment: SES identity ARNs depend on domain verification. OIDC trust policy restricts role assumption to this repository only.
     Properties:
       PolicyName: SESManagement
       Roles:
