@@ -43,6 +43,7 @@ def generate_pages(env, data, output_dir, api_endpoint):
         ("index.html", "index.html", {"page": "home"}),
         ("resume.html", "resume.html", {"page": "resume"}),
         ("services.html", "services.html", {"page": "services"}),
+        ("architecture.html", "architecture.html", {"page": "architecture"}),
         (
             "contact.html",
             "contact.html",

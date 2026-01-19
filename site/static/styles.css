@@ -803,3 +803,210 @@ section h2 {
         width: 100%;
     }
 }
+
+/* Architecture Page */
+.architecture-overview {
+    background: var(--color-bg-alt);
+}
+
+.architecture-diagram {
+    background: var(--color-bg);
+    padding: 2rem;
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    overflow-x: auto;
+}
+
+.diagram {
+    font-family: 'Courier New', Consolas, monospace;
+    font-size: 0.75rem;
+    line-height: 1.4;
+    white-space: pre;
+    color: var(--color-text);
+    margin: 0;
+}
+
+.component-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 2rem;
+}
+
+.component-card {
+    background: var(--color-bg);
+    padding: 2rem;
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    transition: transform var(--transition), box-shadow var(--transition);
+}
+
+.component-card:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-md);
+}
+
+.component-card h3 {
+    color: var(--color-primary);
+    margin-bottom: 0.5rem;
+}
+
+.component-stack {
+    font-size: 0.85rem;
+    color: var(--color-text-muted);
+    margin-bottom: 1rem;
+    font-family: 'Courier New', Consolas, monospace;
+}
+
+.component-features {
+    padding-left: 1.25rem;
+    font-size: 0.95rem;
+}
+
+.component-features li {
+    margin-bottom: 0.5rem;
+}
+
+.architecture-components {
+    background: var(--color-bg-alt);
+}
+
+.security-controls {
+    background: var(--color-bg);
+}
+
+.section-intro {
+    text-align: center;
+    max-width: 700px;
+    margin: 0 auto 2rem;
+    color: var(--color-text-light);
+}
+
+.controls-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 1.5rem;
+}
+
+.control-card {
+    background: var(--color-bg-alt);
+    padding: 1.5rem;
+    border-radius: var(--radius-md);
+    border-left: 4px solid var(--color-primary);
+}
+
+.control-card h3 {
+    font-size: 1.1rem;
+    color: var(--color-primary);
+    margin-bottom: 1rem;
+}
+
+.control-card ul {
+    list-style: none;
+    padding: 0;
+}
+
+.control-card li {
+    padding: 0.4rem 0;
+    font-size: 0.95rem;
+    color: var(--color-text-light);
+}
+
+.control-card li::before {
+    content: '\2713';
+    color: var(--color-success);
+    margin-right: 0.5rem;
+    font-weight: bold;
+}
+
+.deployment-workflow {
+    background: var(--color-bg-alt);
+}
+
+.workflow-steps {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.workflow-step {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    background: var(--color-bg);
+    padding: 1.5rem;
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    min-width: 160px;
+}
+
+.step-number {
+    width: 40px;
+    height: 40px;
+    background: var(--gradient-primary);
+    color: #fff;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 1.1rem;
+    flex-shrink: 0;
+}
+
+.step-content h4 {
+    font-size: 1rem;
+    margin-bottom: 0.25rem;
+}
+
+.step-content p {
+    font-size: 0.85rem;
+    color: var(--color-text-muted);
+    margin: 0;
+}
+
+.workflow-arrow {
+    font-size: 1.5rem;
+    color: var(--color-primary);
+    font-weight: bold;
+}
+
+.source-code {
+    background: var(--gradient-primary);
+    color: #fff;
+    text-align: center;
+}
+
+.source-code h2 {
+    color: #fff;
+}
+
+.source-code p {
+    opacity: 0.9;
+    margin-bottom: 1.5rem;
+}
+
+.source-code .btn-primary {
+    background: #fff;
+    color: var(--color-primary);
+}
+
+@media (max-width: 768px) {
+    .diagram {
+        font-size: 0.6rem;
+    }
+
+    .workflow-steps {
+        flex-direction: column;
+    }
+
+    .workflow-arrow {
+        transform: rotate(90deg);
+    }
+
+    .workflow-step {
+        width: 100%;
+        max-width: 300px;
+    }
+}
