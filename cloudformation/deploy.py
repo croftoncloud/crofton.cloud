@@ -5,10 +5,13 @@ This script automates the deployment of the cfn-website-framework.yaml template.
 It uses parameters for ACM certificates, domain name, project prefix, and bucket lifecycle configurations.
 
 Usage:
-    python deploy.py --account <AWS_PROFILE> --region <AWS_REGION> --domain <DOMAIN_NAME> --prefix <PROJECT_PREFIX>
+    python deploy.py --domain <DOMAIN_NAME> --prefix <PROJECT_PREFIX> [--account <AWS_PROFILE>] [--region <AWS_REGION>]
 
-Example:
+Example (local with profile):
     python deploy.py --account myprofile --region us-east-1 --domain example.com --prefix myproject
+
+Example (CI with OIDC credentials):
+    python deploy.py --region us-east-1 --domain example.com --prefix myproject
 """
 
 import time
@@ -191,7 +194,12 @@ def main():
     parser = argparse.ArgumentParser(
         description="Deploy CloudFormation stack for website framework."
     )
-    parser.add_argument("--account", required=True, help="AWS named profile to use.")
+    parser.add_argument(
+        "--account",
+        required=False,
+        default=None,
+        help="AWS named profile to use. Optional in CI where credentials are set via environment.",
+    )
     parser.add_argument(
         "--region",
         default="us-east-1",
@@ -221,8 +229,11 @@ def main():
 
     args = parser.parse_args()
 
-    # Configure AWS session
-    boto3.setup_default_session(profile_name=args.account, region_name=args.region)
+    # Configure AWS session (use profile if provided, otherwise use default credential chain)
+    if args.account:
+        boto3.setup_default_session(profile_name=args.account, region_name=args.region)
+    else:
+        boto3.setup_default_session(region_name=args.region)
     cfn_client = boto3.client("cloudformation")
     route53_client = boto3.client("route53")
     acm_client = boto3.client("acm")
