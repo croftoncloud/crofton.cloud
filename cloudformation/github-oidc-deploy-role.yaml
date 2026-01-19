@@ -452,11 +452,11 @@ Resources:
       cfn_nag:
         rules_to_suppress:
           - id: W12
-            reason: logs:DescribeLogGroups is an account-level action requiring Resource '*'
+            reason: Log delivery and describe actions are account-level requiring Resource '*'
       checkov:
         skip:
           - id: CKV_AWS_111
-            comment: logs:DescribeLogGroups requires Resource '*'. OIDC trust restricts to this repository only.
+            comment: Log delivery and describe actions require Resource '*'. OIDC trust restricts to this repository only.
     Properties:
       PolicyName: CloudWatchLogsManagement
       Roles:
@@ -486,6 +486,19 @@ Resources:
             Effect: Allow
             Action:
               - logs:DescribeLogGroups
+              - logs:DescribeResourcePolicies
+              - logs:PutResourcePolicy
+              - logs:DeleteResourcePolicy
+            Resource: '*'
+          # API Gateway V2 access logging requires log delivery permissions
+          - Sid: CloudWatchLogsDelivery
+            Effect: Allow
+            Action:
+              - logs:CreateLogDelivery
+              - logs:GetLogDelivery
+              - logs:UpdateLogDelivery
+              - logs:DeleteLogDelivery
+              - logs:ListLogDeliveries
             Resource: '*'
 
   # Policy for SQS (event notifications)
