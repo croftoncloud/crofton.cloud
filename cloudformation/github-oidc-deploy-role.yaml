@@ -382,6 +382,10 @@ Resources:
               - lambda:CreateAlias
               - lambda:UpdateAlias
               - lambda:DeleteAlias
+              # Required for ReservedConcurrentExecutions
+              - lambda:PutFunctionConcurrency
+              - lambda:DeleteFunctionConcurrency
+              - lambda:GetFunctionConcurrency
             Resource:
               - !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectPrefix}-*'
 
